@@ -2,7 +2,7 @@
 
 ### Super S3 command line tool
 
-Chou-han Yang
+Chou-han Yang  
 2012-11-09 (covers s4cmd version 1.5.7)
 
 ## Motivation
@@ -13,12 +13,12 @@ S4cmd is a command-line utility for accessing
 
 We have used s3cmd heavily for a number of scripted, data-intensive
 applications. However as the need for a variety of small improvements arose, we
-created our own implementation, s4cmd. It is intended as a drop-in replacement
-for s3cmd for enhanced performance and for large files, and with a number of
+created our own implementation, s4cmd. It is intended as an alternative to 
+s3cmd for enhanced performance and for large files, and with a number of
 additional features and fixes that we have found useful.
 
 It strives to be compatible with the most common usage scenarios for s3cmd. It
-does not offer exact compatibility, due to a number of corner cases where
+does not offer exact drop-in compatibility, due to a number of corner cases where
 different behavior seems preferable, or for bugfixes.
 
 
