@@ -61,6 +61,7 @@ class Options:
   '''
   def __init__(self, opt = None):
     if opt == None: opt = False # Set opt to False as the default value for other options.
+    self.s3cfg = opt.s3cfg if opt else None
     self.recursive = (opt and opt.recursive != None)
     self.force = (opt and opt.force != None)
     self.sync_check = (opt and opt.sync_check != None)
@@ -424,11 +425,11 @@ class S3Handler(object):
       return None
 
   @staticmethod
-  def s3_keys_from_s3cfg():
+  def s3_keys_from_s3cfg(s3cfg_path = None):
     '''Retrieve S3 access key settings from s3cmd's config file, if present; otherwise return None.'''
-    s3cfg_path = None
     try:
-      s3cfg_path = "%s/.s3cfg" % os.environ["HOME"]
+      if s3cfg_path is None:
+        s3cfg_path = "%s/.s3cfg" % os.environ["HOME"]
       if not os.path.exists(s3cfg_path):
         return None
       config = ConfigParser.ConfigParser()
@@ -441,9 +442,9 @@ class S3Handler(object):
       return None
       
   @staticmethod
-  def init_s3_keys():
+  def init_s3_keys(s3cfg_path = None):
     '''Initialize s3 access keys from environment varialbe or s3cfg config file.'''
-    S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg()
+    S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg(s3cfg_path)
 
   def __init__(self, opt = Options()):
     '''Constructor, connect to S3 store'''
@@ -1249,6 +1250,7 @@ if __name__ == '__main__':
 
   # Parser for command line options.
   parser = optparse.OptionParser(description = 'Super S3 command line tool. Version %s' % S4CMD_VERSION)
+  parser.add_option('-p', '--config', help = 'path to s3cfg config file', dest = 's3cfg', type = 'string', default = None)
   parser.add_option('-f', '--force', help = 'force overwrite files when download or upload', dest = 'force', action = 'store_true')
   parser.add_option('-r', '--recursive', help = 'recursively checking subdirectories', dest = 'recursive', action = 'store_true')
   parser.add_option('-s', '--sync-check', help = 'check file md5 before download or upload', dest = 'sync_check', action = 'store_true')
@@ -1266,7 +1268,7 @@ if __name__ == '__main__':
   initialize(opt)
 
   # Initalize keys for S3.
-  S3Handler.init_s3_keys()
+  S3Handler.init_s3_keys(opt.s3cfg)
 
   try:
     CommandHandler(opt).run(args)
