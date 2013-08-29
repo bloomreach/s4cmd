@@ -35,6 +35,9 @@ pushd source
   dd if=/dev/urandom of=001 bs=$FILESIZE count=2
   dd if=/dev/urandom of=010 bs=$FILESIZE count=2
   dd if=/dev/urandom of=101 bs=$FILESIZE count=2
+  chmod 700 001
+  chmod 770 010
+  chmod 707 101
   mkdir a
   pushd a
     mkdir a
@@ -134,7 +137,7 @@ echo "Test $CASE_ID: single file upload/download"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD put source/001 $REMOTEDIR/$CASE_ID/001 > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 > $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 >> $CASE_ID.log 2>&1
 
 md5sum source/001 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/001 | cut -f1 -d' ' > $CASE_ID.chk
@@ -151,7 +154,7 @@ echo "Test $CASE_ID: single file upload/download (Trailing slash)"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD put source/001 $REMOTEDIR/$CASE_ID/001-1/ > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/001-1/001 $CASE_ID/001-1 > $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/001-1/001 $CASE_ID/001-1 >> $CASE_ID.log 2>&1
 
 md5sum source/001 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/001-1 | cut -f1 -d' ' > $CASE_ID.chk
@@ -168,7 +171,7 @@ echo "Test $CASE_ID: wildcards upload"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD put source/*/?2/*-??1 $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/* $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/* $CASE_ID/ >> $CASE_ID.log 2>&1
 
 md5sum source/*/?2/*-??1 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -185,7 +188,7 @@ echo "Test $CASE_ID: wildcards upload (trailing slash)"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD put source/*/?2/b?-1?1 $REMOTEDIR/$CASE_ID/a > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/a $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/a $CASE_ID/ >> $CASE_ID.log 2>&1
 
 md5sum source/*/?2/b?-1?1 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -230,7 +233,7 @@ CASE_ID=case4-1
 echo "Test $CASE_ID: single directory (upload and download)"
 #####################################################################
 $S4CMD put -r source/a/a1/ $REMOTEDIR/$CASE_ID > $CASE_ID.log 2>&1
-$S4CMD get -r $REMOTEDIR/$CASE_ID/ $CASE_ID > $CASE_ID.log 2>&1
+$S4CMD get -r $REMOTEDIR/$CASE_ID/ $CASE_ID >> $CASE_ID.log 2>&1
 
 md5sum source/a/a1/* | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -246,7 +249,7 @@ CASE_ID=case4-2
 echo "Test $CASE_ID: single directory (Trailing slash)"
 #####################################################################
 $S4CMD put -r source/a/a1/ $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD get -r $REMOTEDIR/$CASE_ID/a1/ $CASE_ID > $CASE_ID.log 2>&1
+$S4CMD get -r $REMOTEDIR/$CASE_ID/a1/ $CASE_ID >> $CASE_ID.log 2>&1
 
 md5sum source/a/a1/* | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -263,7 +266,7 @@ echo "Test $CASE_ID: single directory (Wildcards)"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD put -r source/a/a?/ $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD get -r $REMOTEDIR/$CASE_ID/a?/ $CASE_ID > $CASE_ID.log 2>&1
+$S4CMD get -r $REMOTEDIR/$CASE_ID/a?/ $CASE_ID >> $CASE_ID.log 2>&1
 
 md5sum source/a/a?/* | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/*/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -280,7 +283,7 @@ echo "Test $CASE_ID: single directory (prefix)"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD put -r source/a/a $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD get -r $REMOTEDIR/$CASE_ID/a $CASE_ID > $CASE_ID.log 2>&1
+$S4CMD get -r $REMOTEDIR/$CASE_ID/a $CASE_ID >> $CASE_ID.log 2>&1
 
 md5sum source/a/a/* | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/*/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -296,7 +299,7 @@ CASE_ID=case5-1
 echo "Test $CASE_ID: trailing slash"
 #####################################################################
 $S4CMD put -r source/a/a1 $REMOTEDIR/$CASE_ID > $CASE_ID.log 2>&1
-$S4CMD get -r $REMOTEDIR/$CASE_ID $CASE_ID > $CASE_ID.log 2>&1
+$S4CMD get -r $REMOTEDIR/$CASE_ID $CASE_ID >> $CASE_ID.log 2>&1
 
 md5sum source/a/a1/* | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -312,7 +315,7 @@ CASE_ID=case5-2
 echo "Test $CASE_ID: trailing slash (normalization)"
 #####################################################################
 $S4CMD put -r source/a/a1/ $REMOTEDIR/$CASE_ID > $CASE_ID.log 2>&1
-$S4CMD get -r $REMOTEDIR/$CASE_ID $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD get -r $REMOTEDIR/$CASE_ID $CASE_ID/ >> $CASE_ID.log 2>&1
 
 md5sum source/a/a1/* | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -328,7 +331,7 @@ CASE_ID=case6-1
 echo "Test $CASE_ID: syncing up and down"
 #####################################################################
 $S4CMD sync source $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD sync $REMOTEDIR/$CASE_ID/ $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD sync $REMOTEDIR/$CASE_ID/ $CASE_ID/ >> $CASE_ID.log 2>&1
 tree $CASE_ID/source | tail -n +2 > $CASE_ID.tree
 
 result=$(diff source.tree $CASE_ID.tree)
@@ -347,7 +350,7 @@ $S4CMD sync ./ $REMOTEDIR/$CASE_ID/source > ../$CASE_ID.log 2>&1
 cd ..
 mkdir $CASE_ID
 cd $CASE_ID
-$S4CMD sync $REMOTEDIR/$CASE_ID/source ./ > ../$CASE_ID.log 2>&1
+$S4CMD sync $REMOTEDIR/$CASE_ID/source ./ >> ../$CASE_ID.log 2>&1
 cd ..
 tree $CASE_ID/source | tail -n +2 > $CASE_ID.tree
 
@@ -364,7 +367,7 @@ echo "Test $CASE_ID: wildcard download"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD sync source $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/source/*/?2/*-??1 $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/source/*/?2/*-??1 $CASE_ID/ >> $CASE_ID.log 2>&1
 
 md5sum source/*/?2/*-??1 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -381,7 +384,7 @@ echo "Test $CASE_ID: wildcard download (trailing slash)"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD sync source/ $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/source/*/?2/*-??1 $CASE_ID > $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/source/*/?2/*-??1 $CASE_ID >> $CASE_ID.log 2>&1
 
 md5sum source/*/?2/*-??1 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -398,8 +401,8 @@ echo "Test $CASE_ID: single file copy"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD put source/001 $REMOTEDIR/$CASE_ID/001_copy > $CASE_ID.log 2>&1
-$S4CMD cp $REMOTEDIR/$CASE_ID/001_copy $REMOTEDIR/$CASE_ID/001 > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 > $CASE_ID.log 2>&1
+$S4CMD cp $REMOTEDIR/$CASE_ID/001_copy $REMOTEDIR/$CASE_ID/001 >> $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 >> $CASE_ID.log 2>&1
 
 md5sum source/001 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/001 | cut -f1 -d' ' > $CASE_ID.chk
@@ -416,8 +419,8 @@ echo "Test $CASE_ID: recursive copy"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD sync source $REMOTEDIR/$CASE_ID-copy/ > $CASE_ID.log 2>&1
-$S4CMD cp -r $REMOTEDIR/$CASE_ID-copy $REMOTEDIR/$CASE_ID > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/source/*/?2/*-??1 $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD cp -r $REMOTEDIR/$CASE_ID-copy $REMOTEDIR/$CASE_ID >> $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/source/*/?2/*-??1 $CASE_ID/ >> $CASE_ID.log 2>&1
 
 md5sum source/*/?2/*-??1 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -434,8 +437,8 @@ echo "Test $CASE_ID: wildcards copy"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD sync source $REMOTEDIR/$CASE_ID-copy/ > $CASE_ID.log 2>&1
-$S4CMD cp -r $REMOTEDIR/$CASE_ID-copy/source/*/?2/*-??1 $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/* $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD cp -r $REMOTEDIR/$CASE_ID-copy/source/*/?2/*-??1 $REMOTEDIR/$CASE_ID/ >> $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/* $CASE_ID/ >> $CASE_ID.log 2>&1
 
 md5sum source/*/?2/*-??1 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -452,8 +455,8 @@ echo "Test $CASE_ID: single file move"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD put source/001 $REMOTEDIR/$CASE_ID/001_copy > $CASE_ID.log 2>&1
-$S4CMD mv $REMOTEDIR/$CASE_ID/001_copy $REMOTEDIR/$CASE_ID/001 > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 > $CASE_ID.log 2>&1
+$S4CMD mv $REMOTEDIR/$CASE_ID/001_copy $REMOTEDIR/$CASE_ID/001 >> $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 >> $CASE_ID.log 2>&1
 
 md5sum source/001 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/001 | cut -f1 -d' ' > $CASE_ID.chk
@@ -470,8 +473,8 @@ echo "Test $CASE_ID: recursive move"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD sync source $REMOTEDIR/$CASE_ID-copy/ > $CASE_ID.log 2>&1
-$S4CMD mv -r $REMOTEDIR/$CASE_ID-copy $REMOTEDIR/$CASE_ID > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/source/*/?2/*-??1 $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD mv -r $REMOTEDIR/$CASE_ID-copy $REMOTEDIR/$CASE_ID >> $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/source/*/?2/*-??1 $CASE_ID/ >> $CASE_ID.log 2>&1
 
 md5sum source/*/?2/*-??1 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -488,8 +491,8 @@ echo "Test $CASE_ID: wildcards move"
 #####################################################################
 mkdir $CASE_ID
 $S4CMD sync source $REMOTEDIR/$CASE_ID-copy/ > $CASE_ID.log 2>&1
-$S4CMD mv -r $REMOTEDIR/$CASE_ID-copy/source/*/?2/*-??1 $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/* $CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD mv -r $REMOTEDIR/$CASE_ID-copy/source/*/?2/*-??1 $REMOTEDIR/$CASE_ID/ >> $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/* $CASE_ID/ >> $CASE_ID.log 2>&1
 
 md5sum source/*/?2/*-??1 | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/* | cut -f1 -d' ' > $CASE_ID.chk
@@ -530,18 +533,23 @@ fi
 
 #####################################################################
 CASE_ID=case11
-echo "Test $CASE_ID: large files (> 5G)"
+echo "Test $CASE_ID: large files (> 5G) with permission"
 #####################################################################
 mkdir $CASE_ID
 #dd if=/dev/urandom of=large bs=500M count=2
 cp ../large large
+chmod 444 large
 $S4CMD put large $REMOTEDIR/$CASE_ID/large > $CASE_ID.log 2>&1
-$S4CMD get $REMOTEDIR/$CASE_ID/large $CASE_ID/large > $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID/large $CASE_ID/large >> $CASE_ID.log 2>&1
+
+stat -c %A large > $CASE_ID/large.privilege
+stat -c %A $CASE_ID/large > $CASE_ID/large_dest.privilege
 
 md5sum large | cut -f1 -d' ' > $CASE_ID.md5
 md5sum $CASE_ID/large | cut -f1 -d' ' > $CASE_ID.chk
 result=$(diff $CASE_ID.md5 $CASE_ID.chk)
-if [[ -z "$result" ]]; then
+result_permission=$(diff $CASE_ID/large.privilege $CASE_ID/large_dest.privilege)
+if [[ ( -z "$result" ) && ( -z "$result_permission" ) ]]; then
   echo "  - OK"
 else
   echo "  - Failed"
@@ -552,10 +560,44 @@ CASE_ID=case12
 echo "Test $CASE_ID: deletion"
 #####################################################################
 $S4CMD sync source $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD del -r $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
-$S4CMD ls $REMOTEDIR/$CASE_ID/ > $CASE_ID.out 2> $CASE_ID.err
+$S4CMD del -r $REMOTEDIR/$CASE_ID/ >> $CASE_ID.log 2>&1
+$S4CMD ls $REMOTEDIR/$CASE_ID/ >> $CASE_ID.out 2> $CASE_ID.err
 
 result=$(cat $CASE_ID.out)
+if [[ -z "$result" ]]; then
+  echo "  - OK"
+else
+  echo "  - Failed"
+fi
+
+#####################################################################
+CASE_ID=case13
+echo "Test $CASE_ID: Testing files permission"
+#####################################################################
+$S4CMD sync source $REMOTEDIR/$CASE_ID/ > $CASE_ID.log 2>&1
+$S4CMD sync $REMOTEDIR/$CASE_ID/ $CASE_ID/ >> $CASE_ID.log 2>&1
+stat -c %A source/* > $CASE_ID/orig.privilege
+stat -c %A $CASE_ID/source/* > $CASE_ID/dest.privilege
+
+result=$(diff $CASE_ID/orig.privilege $CASE_ID/dest.privilege)
+
+if [[ -z "$result_001" ]]; then
+  echo "  - OK"
+else
+  echo "  - Failed"
+fi
+
+#####################################################################
+CASE_ID=case14
+echo "Test $CASE_ID: Testing double slashes"
+#####################################################################
+mkdir $CASE_ID
+$S4CMD put source/001 $REMOTEDIR/$CASE_ID//001 > $CASE_ID.log 2>&1
+$S4CMD get $REMOTEDIR/$CASE_ID//001 $CASE_ID/001 >> $CASE_ID.log 2>&1
+
+md5sum source/001 | cut -f1 -d' ' > $CASE_ID.md5
+md5sum $CASE_ID/001 | cut -f1 -d' ' > $CASE_ID.chk
+result=$(diff $CASE_ID.md5 $CASE_ID.chk)
 if [[ -z "$result" ]]; then
   echo "  - OK"
 else
