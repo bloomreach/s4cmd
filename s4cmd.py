@@ -20,7 +20,7 @@
 Super S3 command line tool.
 """
 
-import sys, os, re, optparse, multiprocessing, cStringIO, fnmatch, time, hashlib, errno
+import sys, os, stat, re, optparse, multiprocessing, cStringIO, fnmatch, time, hashlib, errno
 import glob, logging, traceback, Queue, types, threading, random, ConfigParser
 
 # We need boto 2.3.0 for multipart upload1
@@ -33,7 +33,7 @@ import boto.exception
 ## Global constants
 ##
 
-S4CMD_VERSION = "1.5.9"
+S4CMD_VERSION = "1.5.17"
 
 SINGLEPART_UPLOAD_MAX = 4500 * 1024 * 1024 # Max file size to upload without S3 multipart upload
 SINGLEPART_DOWNLOAD_MAX = 50 * 1024 * 1024 # Max file size to download with single thread
@@ -44,6 +44,9 @@ PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
 TIMESTAMP_REGEX = re.compile(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}).(\d{3})Z')
 TIMESTAMP_FORMAT = '%4s-%2s-%2s %2s:%2s'
+
+# Global list for temp files.
+TEMP_FILES = set()
 
 # Environment variable names for S3 credentials.
 S3_ACCESS_KEY_NAME = "S3_ACCESS_KEY"
@@ -82,6 +85,10 @@ class Failure(RuntimeError):
 
 class InvalidArgument(RuntimeError):
   '''Exception for invalid input parameters'''
+  pass
+
+class RetryFailure(Exception):
+  '''Runtime failure that can be retried'''
   pass
 
 def initialize(opt = None):
@@ -196,7 +203,32 @@ def fail(message, exc_info = None, status = 1, stacktrace = False):
   error(text)
   if stacktrace:
     error(traceback.format_exc())
+  clean_tempfiles()
   sys.exit(status)
+
+@synchronized
+def tempfile_get(target):
+  '''Get a temp filename for atomic download.'''
+  fn = '%s-%s.tmp' % (target, ''.join(random.Random().sample("0123456789abcdefghijklmnopqrstuvwxyz", 15)))
+  TEMP_FILES.add(fn)
+  return fn
+
+@synchronized
+def tempfile_set(tempfile, target):
+  '''Atomically rename and clean tempfile'''
+  if target:
+    os.rename(tempfile, target)
+  else:
+    os.unlink(tempfile)
+
+  if target in TEMP_FILES:
+    TEMP_FILES.remove(tempfile)
+
+def clean_tempfiles():
+  '''Clean up temp files'''
+  for fn in TEMP_FILES:
+    if os.path.exists(fn):
+      os.unlink(fn)
 
 class S3URL:
   '''Simple wrapper for S3 URL.
@@ -315,9 +347,11 @@ class ThreadPool(object):
         except Failure, e:
           self.pool.tasks.terminate(e)
           fail('[Runtime Failure] ', exc_info = e)
-        except boto.exception.S3ResponseError, e:
-          self.pool.tasks.terminate(e)
-          fail('[S3ResponseError] %s: %s' % (e.error_code, e.error_message))
+        # Also retry known S3ResponseError since S3 has transient
+        # errors from time to time.
+        # except boto.exception.S3ResponseError, e:
+        #   self.pool.tasks.terminate(e)
+        #   fail('[S3ResponseError] %s: %s' % (e.error_code, e.error_message))
         except OSError, e:
           self.pool.tasks.terminate(e)
           fail('[OSError] %d: %s' % (e.errno, e.strerror))
@@ -392,6 +426,7 @@ class ThreadPool(object):
     # Wait for all thread to terminate.
     for worker in self.workers:
       worker.join()
+      worker.s3 = None
       
   @synchronized
   def processed(self):
@@ -453,17 +488,23 @@ class S3Handler(object):
 
   def __del__(self):
     '''Destructor, stop s3 connection'''
-    self.s3.close()
+    if self.s3 is not None:
+      self.s3.close()
+      self.s3 = None
     
   def connect(self):
     '''Connect to S3 storage'''
     try:
       if S3Handler.S3_KEYS:
-        self.s3 = boto.connect_s3(S3Handler.S3_KEYS[0], S3Handler.S3_KEYS[1], is_secure = self.opt.use_ssl)
+        self.s3 = boto.connect_s3(S3Handler.S3_KEYS[0], 
+                                  S3Handler.S3_KEYS[1],
+                                  is_secure = self.opt.use_ssl,
+                                  suppress_consec_slashes = False)
       else:
-        self.s3 = boto.connect_s3(is_secure = self.opt.use_ssl)
+        self.s3 = boto.connect_s3(is_secure = self.opt.use_ssl,
+                                  suppress_consec_slashes = False)
     except Exception, e:
-      raise Failure('Unable to connect to s3: %s' % e)
+      raise RetryFailure('Unable to connect to s3: %s' % e)
     
   @log_calls
   def list_buckets(self):
@@ -557,7 +598,7 @@ class S3Handler(object):
       result += [f['name'] for f in self.s3walk(src, True)]
       self.opt.recursive = tmp
 
-    if (len(result) == 0) and (not opt.ignore_empty_source):
+    if (len(result) == 0) and (not self.opt.ignore_empty_source):
       fail("[Runtime Failure] Source doesn't exist.")
         
     return result
@@ -598,7 +639,16 @@ class S3Handler(object):
         raise Failure('Target "%s" is not a directory (with a trailing slash).' % target)
 
     pool.join()
-    
+
+  @log_calls    
+  def update_privilege(self, source, target):
+    '''Get privileges from metadata of the source in s3, and apply them to target'''
+    s3url = S3URL(source)
+    bucket = self.s3.lookup(s3url.bucket)
+    remoteKey = bucket.get_key(s3url.path)
+    if 'privilege' in remoteKey.metadata:
+      os.chmod(target, int(remoteKey.metadata['privilege'], 8))
+
   @log_calls
   def get_single_file(self, pool, source, target):
     '''Download a single file or a directory by adding a task into queue'''
@@ -752,7 +802,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     '''Constructor'''
     S3Handler.__init__(self, pool.opt)
     ThreadPool.Worker.__init__(self, pool)
-    
+
   def reset(self):
     '''Reset connection for retry.'''
     if self.s3:
@@ -907,7 +957,15 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     mpi.total = len(splits)
 
     return splits
-    
+   
+  @log_calls
+  def get_file_privilege(self, source):
+    '''Get privileges of a local file'''
+    try:
+      return str(oct(os.stat(source).st_mode)[-3:])
+    except Exception, e:
+      raise Failure('Could not get stat for %s, error_message = %s', source, e)
+
   @log_calls
   @auto_reset
   def upload(self, mpi, source, target, pos = 0, chunk = 0, part = 0):
@@ -934,13 +992,14 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       if fsize < SINGLEPART_UPLOAD_MAX:
         key = boto.s3.key.Key(bucket)
         key.key = s3url.path
+        key.set_metadata('privilege',  self.get_file_privilege(source))
         key.set_contents_from_filename(source)
         message('%s => %s', source, target)
         return
 
       # Here we need to have our own md5 value because multipart upload calculates
-      # different md5 values.
-      mpu = bucket.initiate_multipart_upload(s3url.path, metadata = {'md5': self.file_hash(source)})
+      # different md5 values.      
+      mpu = bucket.initiate_multipart_upload(s3url.path, metadata = {'md5': self.file_hash(source), 'privilege': self.get_file_privilege(source)})
 
       for args in self.get_file_splits(mpu.id, source, target, fsize, DEFAULT_SPLIT):
         self.pool.upload(*args)
@@ -970,12 +1029,57 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         message('%s => %s', source, target)
       except Exception, e:
         mpu.cancel_upload()
-        raise Failure('Upload failed: Unable to complete upload %s.' % source)
-        
+        raise RetryFailure('Upload failed: Unable to complete upload %s.' % source)
+
   @log_calls
-  def get_temp_file(self, target):
-    '''Get a temp filename for atomic download.'''
-    return '%s-%s.tmp' % (target, ''.join(random.Random().sample("0123456789abcdefghijklmnopqrstuvwxyz", 15)))
+  def _verify_file_size(self, key, downloaded_file):
+    '''Verify the file size of the downloaded file.'''
+    file_size = os.path.getsize(downloaded_file)
+    if key.size != file_size:
+      raise RetryFailure('Downloaded file size inconsistent: %s' % (repr(key)))
+
+  @log_calls
+  def _kick_off_downloads(self, s3url, bucket, source, target):
+    '''Kick off download tasks, or directly download the file if the file is small.'''
+    key = bucket.get_key(s3url.path)
+
+    # optional checks
+    if self.opt.dry_run:
+      message('%s => %s', source, target)
+      return
+    elif self.opt.sync_check and self.sync_check(target, key):
+      message('%s => %s (synced)', source, target)
+      return
+    elif not self.opt.force and os.path.exists(target):
+      raise Failure('File already exists: %s' % target)
+
+    if key is None:
+      raise Failure('The key "%s" does not exists.' % (s3url.path,))
+
+    resp = self.s3.make_request('HEAD', bucket = bucket, key = key)
+    fsize = int(resp.getheader('content-length'))
+
+    # Small file optimization.
+    if fsize < SINGLEPART_DOWNLOAD_MAX:
+      tempfile = tempfile_get(target)
+      try: # Atomically download file with
+        if self.opt.recursive:
+          self.mkdirs(tempfile)
+        key.get_contents_to_filename(tempfile)
+        self.update_privilege(source, tempfile)
+        self._verify_file_size(key, tempfile)
+        tempfile_set(tempfile, target)
+        message('%s => %s', source, target)
+      except Exception, e:
+        tempfile_set(tempfile, None)
+        raise RetryFailure('Download Failure: %s, Source: %s.' % (e.message, source))
+
+      return
+
+    # Here we use temp filename as the id of mpi.
+    for args in self.get_file_splits(tempfile_get(target), source, target, fsize, DEFAULT_SPLIT):
+      self.pool.download(*args)
+    return
 
   @log_calls
   @auto_reset
@@ -986,33 +1090,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
     # Initialization
     if not mpi:
-      key = bucket.get_key(s3url.path)
-      
-      # optional checks
-      if self.opt.dry_run:
-        message('%s => %s', source, target)
-        return
-      elif self.opt.sync_check and self.sync_check(target, key):
-        message('%s => %s (synced)', source, target)
-        return
-      elif not self.opt.force and os.path.exists(target):
-        raise Failure('File already exists: %s' % target)
-
-      resp = self.s3.make_request('HEAD', bucket = bucket, key = key)
-      fsize = int(resp.getheader('content-length'))
-      
-      # Small file optimization.
-      if fsize < SINGLEPART_DOWNLOAD_MAX:
-        if self.opt.recursive:
-          self.mkdirs(target)
-        # XXX Use context manager for atomic write.
-        key.get_contents_to_filename(target)
-        message('%s => %s', source, target)
-        return
-
-      # Here we use temp filename as the id of mpi.
-      for args in self.get_file_splits(self.get_temp_file(target), source, target, fsize, DEFAULT_SPLIT):
-        self.pool.download(*args)
+      self._kick_off_downloads(s3url, bucket, source, target)
       return
         
     tempfile = mpi.id
@@ -1035,12 +1113,20 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       
     # Finalize
     if mpi.complete():
+      key = bucket.get_key(s3url.path)
       try:
-        os.rename(tempfile, target)
+        self.update_privilege(source, tempfile)
+        self._verify_file_size(key, tempfile)
+        tempfile_set(tempfile, target)
         message('%s => %s', source, target)
       except Exception, e:
-        raise Failure('Upload failed: Unable to complete download %s.' % source)
-        
+        # Note that we don't retry in this case, because 
+        # We are going to remove the temp file, and if we
+        # retry here with original parameters (wrapped in
+        # the task item), it would fail anyway
+        tempfile_set(tempfile, None)
+        raise Failure('Download Failure: %s, Source: %s.' % (e.message, source))
+
   @log_calls
   @auto_reset
   def copy(self, source, target, delete_source = False):
@@ -1150,7 +1236,7 @@ class CommandHandler(object):
     # Format output.
     for item in result:
       text = (format % tuple(cwidth)) % item
-      message(text.rstrip())
+      message('%s', text.rstrip())
 
   @log_calls
   def ls_handler(self, args):
@@ -1278,29 +1364,41 @@ if __name__ == '__main__':
     fail('[S3ResponseError] %s: %s' % (e.error_code, e.error_message))
   except Exception, e:
     fail('[Runtime Exception] ', exc_info = e, stacktrace = True)
-    
+
+  clean_tempfiles()
   progress('') # Clear progress message before exit.
 
 # Revision history:
 #
-#   - 1.0.1: Fixed wrongly directory created by cp command with a single file.
-#            Fixed wrong directory discovery with a single child directory.
-#   - 1.0.2: Fix the problem of get/put/sync directories.
-#            Fix the wildcard check for sync command.
-#            Temporarily avoid multipart upload for files smaller than 4.5G
-#            Stop showing progress if output is not connected to tty.
-#   - 1.5:   Allow wildcards with recursive mode.
-#            Support -d option for ls command.
-#   - 1.5.1: Fix the bug that recursive S3 walk wrongly check the prefix.
-#            Add more tests.
-#            Fix md5 etag (with double quote) checking bug.
-#   - 1.5.2: Read keys from environment variable or s3cfg.
-#            Implement mv command.
-#   - 1.5.3: Implement du and _totalsize command.
-#   - 1.5.4: Implement --ignore-empty-source parameter for backward compatibility.
-#   - 1.5.5: Implement environment variable S4CMD_NUM_THREADS to change the default
-#            number of threads.
-#   - 1.5.6: Fix s4cmd get/sync error with --ignore-empty-source for empty source
-#   - 1.5.7: Fix multi-threading race condition with os.makedirs call
-#   - 1.5.8: Fix the initialization of Options class.
-#   - 1.5.9: Open source licensing.
+#   - 1.0.1:  Fixed wrongly directory created by cp command with a single file.
+#             Fixed wrong directory discovery with a single child directory.
+#   - 1.0.2:  Fix the problem of get/put/sync directories.
+#             Fix the wildcard check for sync command.
+#             Temporarily avoid multipart upload for files smaller than 4.5G
+#             Stop showing progress if output is not connected to tty.
+#   - 1.5:    Allow wildcards with recursive mode.
+#             Support -d option for ls command.
+#   - 1.5.1:  Fix the bug that recursive S3 walk wrongly check the prefix.
+#             Add more tests.
+#             Fix md5 etag (with double quote) checking bug.
+#   - 1.5.2:  Read keys from environment variable or s3cfg.
+#             Implement mv command.
+#   - 1.5.3:  Implement du and _totalsize command.
+#   - 1.5.4:  Implement --ignore-empty-source parameter for backward compatibility.
+#   - 1.5.5:  Implement environment variable S4CMD_NUM_THREADS to change the default
+#             number of threads.
+#   - 1.5.6:  Fix s4cmd get/sync error with --ignore-empty-source for empty source
+#   - 1.5.7:  Fix multi-threading race condition with os.makedirs call
+#   - 1.5.8:  Fix the initialization of Options class.
+#   - 1.5.9:  Open source licensing.
+#   - 1.5.10: Fix options global variable bug
+#   - 1.5.11: Fix atomic write issue for small files calling boto API directly.
+#             Add code to cleanup temp files.
+#             Fix a bug where pretty_print calls message() without format.
+#   - 1.5.12: Add RetryFailure class to unknown network failures.
+#   - 1.5.13: Also retry S3ResponseError exceptions.
+#   - 1.5.14: Copy file privileges. If s4cmd sync is used, then it only update 
+#             privileges of files when their signatures are different
+#   - 1.5.15: Close http connection cleanly after thread pool execution.
+#   - 1.5.16: Disable consecutive slashes removal.
+#   - 1.5.17: Check file size consistency after download; will retry the download if inconsistent.
