@@ -2,6 +2,7 @@
 
 #
 # Copyright 2012 BloomReach, Inc.
+# Portions Copyright 2014 Databricks
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -72,7 +73,7 @@ class Options:
     self.debug = (opt and opt.debug != None)
     self.use_ssl = (opt and opt.use_ssl != None)
     self.show_dir = (opt and opt.show_dir != None)
-    self.delete_remote = (opt and opt.delete_remote != None)
+    self.delete_removed = (opt and opt.delete_removed != None)
     self.ignore_empty_source = (opt and opt.ignore_empty_source)
     self.retry = opt.retry if opt else DEFAULT_RETRY
     if opt and opt.num_threads:
@@ -689,7 +690,7 @@ class S3Handler(object):
     pool.join()
 
   @log_calls
-  def delete_remote_files(self, source, target):
+  def delete_removed_files(self, source, target):
     '''Remove remote files that are not present in the local source.
     '''
     if os.path.isdir(source):
@@ -777,8 +778,8 @@ class S3Handler(object):
       self.get_files(source, target)
     elif not src_s3_url and dst_s3_url:
       self.put_files(source, target)
-      if self.opt.delete_remote:
-        self.delete_remote_files(source, target)
+      if self.opt.delete_removed:
+        self.delete_removed_files(source, target)
     elif src_s3_url and dst_s3_url:
       self.cp_files(source, target)
     else:
@@ -1365,7 +1366,7 @@ if __name__ == '__main__':
   parser = optparse.OptionParser(description = 'Super S3 command line tool. Version %s' % S4CMD_VERSION)
   parser.add_option('-f', '--force', help = 'force overwrite files when download or upload', dest = 'force', action = 'store_true')
   parser.add_option('-r', '--recursive', help = 'recursively checking subdirectories', dest = 'recursive', action = 'store_true')
-  parser.add_option('-D', '--deleteremote', help = 'delete remote files that do not exist locally', dest = 'delete_remote', action = 'store_true')
+  parser.add_option('-D', '--delete-removed', help = 'delete remote files that do not exist locally', dest = 'delete_removed', action = 'store_true')
   parser.add_option('-s', '--sync-check', help = 'check file md5 before download or upload', dest = 'sync_check', action = 'store_true')
   parser.add_option('-n', '--dry-run', help = 'trial run without actual download or upload', dest = 'dry_run', action = 'store_true')
   parser.add_option('-t', '--retry', help = 'number of retries before giving up', dest = 'retry', type = int, default = DEFAULT_RETRY)
