@@ -461,11 +461,14 @@ class S3Handler(object):
       return None
 
   @staticmethod
-  def s3_keys_from_s3cfg():
+  def s3_keys_from_s3cfg(opt):
     '''Retrieve S3 access key settings from s3cmd's config file, if present; otherwise return None.'''
     s3cfg_path = None
     try:
-      s3cfg_path = "%s/.s3cfg" % os.environ["HOME"]
+      if opt.config != None:
+        s3cfg_path = "%s/.s3cfg" % opt.config
+      else:
+        s3cfg_path = "%s/.s3cfg" % os.environ["HOME"]
       if not os.path.exists(s3cfg_path):
         return None
       config = ConfigParser.ConfigParser()
@@ -474,13 +477,13 @@ class S3Handler(object):
       log.debug("read S3 keys from $HOME/.s3cfg file")
       return keys
     except Exception, e:
-      log.info("could not read S3 keys from $HOME/.s3cfg file; skipping (%s)", e)
+      log.info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
       return None
       
   @staticmethod
-  def init_s3_keys():
+  def init_s3_keys(opt):
     '''Initialize s3 access keys from environment varialbe or s3cfg config file.'''
-    S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg()
+    S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg(opt)
 
   def __init__(self, opt = Options()):
     '''Constructor, connect to S3 store'''
@@ -1371,6 +1374,7 @@ if __name__ == '__main__':
   parser.add_option('-n', '--dry-run', help = 'trial run without actual download or upload', dest = 'dry_run', action = 'store_true')
   parser.add_option('-t', '--retry', help = 'number of retries before giving up', dest = 'retry', type = int, default = DEFAULT_RETRY)
   parser.add_option('-c', '--num-threads', help = 'number of concurrent threads', type = int)
+  parser.add_option('-C', '--config', help='s3cmd config (used for keys only)', type = "string", dest = 'config')
   parser.add_option('-d', '--show-directory', help = 'show directory instead of its content', dest = 'show_dir', action = 'store_true')
   parser.add_option('--ignore-empty-source', help = 'ignore empty source from s3', dest = 'ignore_empty_source', action = 'store_true')
   parser.add_option('--use-ssl', help = 'use SSL connection to S3', dest = 'use_ssl', action = 'store_true')
@@ -1382,7 +1386,7 @@ if __name__ == '__main__':
   initialize(opt)
 
   # Initalize keys for S3.
-  S3Handler.init_s3_keys()
+  S3Handler.init_s3_keys(options)
 
   try:
     CommandHandler(opt).run(args)
