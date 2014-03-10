@@ -72,6 +72,7 @@ class Options:
     self.debug = (opt and opt.debug != None)
     self.use_ssl = (opt and opt.use_ssl != None)
     self.show_dir = (opt and opt.show_dir != None)
+    self.delete_remote = (opt and opt.delete_remote != None)
     self.ignore_empty_source = (opt and opt.ignore_empty_source)
     self.retry = opt.retry if opt else DEFAULT_RETRY
     if opt and opt.num_threads:
@@ -686,6 +687,31 @@ class S3Handler(object):
         pass
 
     pool.join()
+
+  @log_calls
+  def delete_remote_files(self, source, target):
+    '''Remove remote files that are not present in the local source.
+    '''
+    if os.path.isdir(source):
+      unecessary = []
+      basepath = S3URL(target).path
+      for f in filter(lambda f: not f['is_dir'], self.s3walk(target)):
+        local_name = os.path.join(source, os.path.relpath(S3URL(f['name']).path, basepath))
+        if not os.path.isfile(local_name):
+          print "Adding " + local_name +" to the delete list as "+f['name']
+          unecessary.append(f['name'])
+        else:
+          print "Found "+local_name+"\n"
+      if len(unecessary) > 0:
+        pool = ThreadPool(ThreadUtil, self.opt)
+        for del_file in unecessary:
+          pool.delete(del_file)
+        pool.join()
+      else:
+        print "No files to delete"
+    else:
+      raise Failure('Source "%s" is not a directory.' % target)
+
     
   @log_calls
   def cp_single_file(self, pool, source, target, delete_source):
@@ -741,8 +767,8 @@ class S3Handler(object):
     
   @log_calls
   def sync_files(self, source, target):
-    '''Sync files to S3. Does not implement deletions.
-       Currently identical to get/put -r -f --sync-check.
+    '''Sync files to S3. Does implement deletions if syncing TO s3.
+       Currently identical to get/put -r -f --sync-check with exception of deletions.
     '''
     src_s3_url = S3URL.is_valid(source)
     dst_s3_url = S3URL.is_valid(target)
@@ -751,6 +777,8 @@ class S3Handler(object):
       self.get_files(source, target)
     elif not src_s3_url and dst_s3_url:
       self.put_files(source, target)
+      if self.opt.delete_remote:
+        self.delete_remote_files(source, target)
     elif src_s3_url and dst_s3_url:
       self.cp_files(source, target)
     else:
@@ -1337,6 +1365,7 @@ if __name__ == '__main__':
   parser = optparse.OptionParser(description = 'Super S3 command line tool. Version %s' % S4CMD_VERSION)
   parser.add_option('-f', '--force', help = 'force overwrite files when download or upload', dest = 'force', action = 'store_true')
   parser.add_option('-r', '--recursive', help = 'recursively checking subdirectories', dest = 'recursive', action = 'store_true')
+  parser.add_option('-D', '--deleteremote', help = 'delete remote files that do not exist locally', dest = 'delete_remote', action = 'store_true')
   parser.add_option('-s', '--sync-check', help = 'check file md5 before download or upload', dest = 'sync_check', action = 'store_true')
   parser.add_option('-n', '--dry-run', help = 'trial run without actual download or upload', dest = 'dry_run', action = 'store_true')
   parser.add_option('-t', '--retry', help = 'number of retries before giving up', dest = 'retry', type = int, default = DEFAULT_RETRY)
