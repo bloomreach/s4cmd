@@ -696,12 +696,14 @@ class S3Handler(object):
   def delete_removed_files(self, source, target):
     '''Remove remote files that are not present in the local source.
     '''
+    message("Deleting files found in %s and not in %s", source, target)
     if os.path.isdir(source):
       unecessary = []
       basepath = S3URL(target).path
       for f in filter(lambda f: not f['is_dir'], self.s3walk(target)):
         local_name = os.path.join(source, os.path.relpath(S3URL(f['name']).path, basepath))
         if not os.path.isfile(local_name):
+          message("%s not found locally, adding to delete queue", local_name)
           unecessary.append(f['name'])
       if len(unecessary) > 0:
         pool = ThreadPool(ThreadUtil, self.opt)
