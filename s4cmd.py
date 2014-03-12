@@ -466,7 +466,7 @@ class S3Handler(object):
     s3cfg_path = None
     try:
       if opt.config != None:
-        s3cfg_path = "%s/.s3cfg" % opt.config
+        s3cfg_path = "%s" % opt.config
       else:
         s3cfg_path = "%s/.s3cfg" % os.environ["HOME"]
       if not os.path.exists(s3cfg_path):
