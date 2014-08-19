@@ -20,8 +20,8 @@
 Super S3 command line tool.
 """
 
-import sys, os, stat, re, optparse, multiprocessing, cStringIO, fnmatch, time, hashlib, errno
-import glob, logging, traceback, Queue, types, threading, random, ConfigParser
+import sys, os, re, optparse, multiprocessing, cStringIO, fnmatch, time, hashlib, errno
+import logging, traceback, Queue, types, threading, random, ConfigParser
 
 # We need boto 2.3.0 for multipart upload1
 import boto
