@@ -473,8 +473,8 @@ class S3Handler(object):
   def s3_keys_from_s3cfg(opt):
     '''Retrieve S3 access key settings from s3cmd's config file, if present; otherwise return None.'''
     try:
-      if opt.config != None:
-        s3cfg_path = "%s" % opt.config
+      if opt.s3cfg != None:
+        s3cfg_path = "%s" % opt.s3cfg
       else:
         s3cfg_path = "%s/.s3cfg" % os.environ["HOME"]
       if not os.path.exists(s3cfg_path):
@@ -1384,7 +1384,6 @@ if __name__ == '__main__':
   parser.add_option('-n', '--dry-run', help = 'trial run without actual download or upload', dest = 'dry_run', action = 'store_true')
   parser.add_option('-t', '--retry', help = 'number of retries before giving up', dest = 'retry', type = int, default = DEFAULT_RETRY)
   parser.add_option('-c', '--num-threads', help = 'number of concurrent threads', type = int)
-  parser.add_option('-C', '--config', help='s3cmd config (used for keys only)', type = "string", dest = 'config')
   parser.add_option('-d', '--show-directory', help = 'show directory instead of its content', dest = 'show_dir', action = 'store_true')
   parser.add_option('--ignore-empty-source', help = 'ignore empty source from s3', dest = 'ignore_empty_source', action = 'store_true')
   parser.add_option('--use-ssl', help = 'use SSL connection to S3', dest = 'use_ssl', action = 'store_true')
