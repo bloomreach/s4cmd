@@ -21,7 +21,7 @@ Super S3 command line tool.
 """
 
 import sys, os, stat, re, optparse, multiprocessing, cStringIO, fnmatch, time, hashlib, errno
-import glob, logging, traceback, Queue, types, threading, random, ConfigParser
+import glob, logging, traceback, Queue, types, threading, random, ConfigParser, socket
 
 # We need boto 2.3.0 for multipart upload1
 import boto
@@ -33,7 +33,7 @@ import boto.exception
 ## Global constants
 ##
 
-S4CMD_VERSION = "1.5.17"
+S4CMD_VERSION = "1.5.19"
 
 SINGLEPART_UPLOAD_MAX = 4500 * 1024 * 1024 # Max file size to upload without S3 multipart upload
 SINGLEPART_DOWNLOAD_MAX = 50 * 1024 * 1024 # Max file size to download with single thread
@@ -44,6 +44,7 @@ PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
 TIMESTAMP_REGEX = re.compile(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}).(\d{3})Z')
 TIMESTAMP_FORMAT = '%4s-%2s-%2s %2s:%2s'
+SOCKET_TIMEOUT = 5 * 60 # in sec(s) (timeout if we don't receive any recv() callback)
 
 # Global list for temp files.
 TEMP_FILES = set()
@@ -70,6 +71,7 @@ class Options:
     self.dry_run = (opt and opt.dry_run != None)
     self.verbose = (opt and opt.verbose != None)
     self.debug = (opt and opt.debug != None)
+    self.validate = (opt and opt.validate != None)
     self.use_ssl = (opt and opt.use_ssl != None)
     self.show_dir = (opt and opt.show_dir != None)
     self.ignore_empty_source = (opt and opt.ignore_empty_source)
@@ -93,6 +95,9 @@ class RetryFailure(Exception):
 
 def initialize(opt = None):
   '''Initialization of this tool. Setup loggers.'''
+
+  # Set low-level socket timeout to prevent read blocking.
+  socket.setdefaulttimeout(SOCKET_TIMEOUT)
 
   if not opt:
     opt = Options()
@@ -204,7 +209,10 @@ def fail(message, exc_info = None, status = 1, stacktrace = False):
   if stacktrace:
     error(traceback.format_exc())
   clean_tempfiles()
-  sys.exit(status)
+  if __name__ == '__main__':
+    sys.exit(status)
+  else:
+    raise RuntimeError(status)
 
 @synchronized
 def tempfile_get(target):
@@ -644,7 +652,7 @@ class S3Handler(object):
   def update_privilege(self, source, target):
     '''Get privileges from metadata of the source in s3, and apply them to target'''
     s3url = S3URL(source)
-    bucket = self.s3.lookup(s3url.bucket)
+    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
     remoteKey = bucket.get_key(s3url.path)
     if 'privilege' in remoteKey.metadata:
       os.chmod(target, int(remoteKey.metadata['privilege'], 8))
@@ -891,7 +899,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
        Recursively walk into all subdirectories if they still match the filter
        path partially.
     '''
-    bucket = self.s3.lookup(s3url.bucket)
+    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
 
     for key in bucket.list(s3dir, PATH_SEP):
       if not self.partial_match(key.name, filter_path):
@@ -971,7 +979,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   def upload(self, mpi, source, target, pos = 0, chunk = 0, part = 0):
     '''Thread worker for upload operation.'''
     s3url = S3URL(target)
-    bucket = self.s3.lookup(s3url.bucket)
+    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
 
     # Initialization: Set up multithreaded uploads.
     if not mpi:
@@ -1086,7 +1094,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   def download(self, mpi, source, target, pos = 0, chunk = 0, part = 0):
     '''Thread worker for download operation.'''
     s3url = S3URL(source)
-    bucket = self.s3.lookup(s3url.bucket)
+    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
 
     # Initialization
     if not mpi:
@@ -1135,7 +1143,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     target_url = S3URL(target)
     
     if not self.opt.dry_run:
-      bucket = self.s3.lookup(source_url.bucket)
+      bucket = self.s3.lookup(source_url.bucket, validate=self.opt.validate)
       key = bucket.get_key(source_url.path)
       key.copy(target_url.bucket, target_url.path)
       if delete_source:
@@ -1147,7 +1155,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   def delete(self, source):
     '''Thread worker for download operation.'''
     s3url = S3URL(source)
-    bucket = self.s3.lookup(s3url.bucket)
+    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
     key = bucket.get_key(s3url.path)
     
     if not self.opt.dry_run:
@@ -1346,6 +1354,7 @@ if __name__ == '__main__':
   parser.add_option('--use-ssl', help = 'use SSL connection to S3', dest = 'use_ssl', action = 'store_true')
   parser.add_option('--verbose', help = 'verbose output', dest = 'verbose', action = 'store_true')
   parser.add_option('--debug', help = 'debug output', dest = 'debug', action = 'store_true')
+  parser.add_option('--validate', help = 'validate lookup operation', dest = 'validate', action = 'store_true')
 
   (options, args) = parser.parse_args()
   opt = Options(options)
@@ -1402,3 +1411,5 @@ if __name__ == '__main__':
 #   - 1.5.15: Close http connection cleanly after thread pool execution.
 #   - 1.5.16: Disable consecutive slashes removal.
 #   - 1.5.17: Check file size consistency after download; will retry the download if inconsistent.
+#   - 1.5.18: Use validate=self.opt.validate to prevent extraneous list API calls.
+#   - 1.5.19: Set socket.setdefaulttimeout() to prevent boto/s3 socket read block in httplib.
