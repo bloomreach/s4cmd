@@ -2,6 +2,7 @@
 
 #
 # Copyright 2012 BloomReach, Inc.
+# Portions Copyright 2014 Databricks
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -75,6 +76,7 @@ class Options:
     self.validate = (opt and opt.validate != None)
     self.use_ssl = (opt and opt.use_ssl != None)
     self.show_dir = (opt and opt.show_dir != None)
+    self.delete_removed = (opt and opt.delete_removed != None)
     self.ignore_empty_source = (opt and opt.ignore_empty_source)
     self.retry = opt.retry if opt else DEFAULT_RETRY
     if opt and opt.num_threads:
@@ -468,10 +470,12 @@ class S3Handler(object):
       return None
 
   @staticmethod
-  def s3_keys_from_s3cfg(s3cfg_path = None):
+  def s3_keys_from_s3cfg(opt):
     '''Retrieve S3 access key settings from s3cmd's config file, if present; otherwise return None.'''
     try:
-      if s3cfg_path is None:
+      if opt.config != None:
+        s3cfg_path = "%s" % opt.config
+      else:
         s3cfg_path = "%s/.s3cfg" % os.environ["HOME"]
       if not os.path.exists(s3cfg_path):
         return None
@@ -481,16 +485,20 @@ class S3Handler(object):
       log.debug("read S3 keys from $HOME/.s3cfg file")
       return keys
     except Exception, e:
-      log.info("could not read S3 keys from $HOME/.s3cfg file; skipping (%s)", e)
+      log.info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
       return None
       
   @staticmethod
-  def init_s3_keys(s3cfg_path = None):
+  def init_s3_keys(opt=None):
     '''Initialize s3 access keys from environment varialbe or s3cfg config file.'''
-    S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg(s3cfg_path)
+    if opt is None:
+      opt = Options()
+    S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg(opt)
 
-  def __init__(self, opt = Options()):
+  def __init__(self, opt=None):
     '''Constructor, connect to S3 store'''
+    if opt is None:
+      opt = Options()
     self.s3 = None
     self.opt = opt
     self.connect()
@@ -695,6 +703,28 @@ class S3Handler(object):
         pass
 
     pool.join()
+
+  @log_calls
+  def delete_removed_files(self, source, target):
+    '''Remove remote files that are not present in the local source.
+    '''
+    message("Deleting files found in %s and not in %s", source, target)
+    if os.path.isdir(source):
+      unecessary = []
+      basepath = S3URL(target).path
+      for f in filter(lambda f: not f['is_dir'], self.s3walk(target)):
+        local_name = os.path.join(source, os.path.relpath(S3URL(f['name']).path, basepath))
+        if not os.path.isfile(local_name):
+          message("%s not found locally, adding to delete queue", local_name)
+          unecessary.append(f['name'])
+      if len(unecessary) > 0:
+        pool = ThreadPool(ThreadUtil, self.opt)
+        for del_file in unecessary:
+          pool.delete(del_file)
+        pool.join()
+    else:
+      raise Failure('Source "%s" is not a directory.' % target)
+
     
   @log_calls
   def cp_single_file(self, pool, source, target, delete_source):
@@ -750,8 +780,8 @@ class S3Handler(object):
     
   @log_calls
   def sync_files(self, source, target):
-    '''Sync files to S3. Does not implement deletions.
-       Currently identical to get/put -r -f --sync-check.
+    '''Sync files to S3. Does implement deletions if syncing TO s3.
+       Currently identical to get/put -r -f --sync-check with exception of deletions.
     '''
     src_s3_url = S3URL.is_valid(source)
     dst_s3_url = S3URL.is_valid(target)
@@ -760,6 +790,8 @@ class S3Handler(object):
       self.get_files(source, target)
     elif not src_s3_url and dst_s3_url:
       self.put_files(source, target)
+      if self.opt.delete_removed:
+        self.delete_removed_files(source, target)
     elif src_s3_url and dst_s3_url:
       self.cp_files(source, target)
     else:
@@ -1347,10 +1379,12 @@ if __name__ == '__main__':
   parser.add_option('-p', '--config', help = 'path to s3cfg config file', dest = 's3cfg', type = 'string', default = None)
   parser.add_option('-f', '--force', help = 'force overwrite files when download or upload', dest = 'force', action = 'store_true')
   parser.add_option('-r', '--recursive', help = 'recursively checking subdirectories', dest = 'recursive', action = 'store_true')
+  parser.add_option('-D', '--delete-removed', help = 'delete remote files that do not exist locally', dest = 'delete_removed', action = 'store_true')
   parser.add_option('-s', '--sync-check', help = 'check file md5 before download or upload', dest = 'sync_check', action = 'store_true')
   parser.add_option('-n', '--dry-run', help = 'trial run without actual download or upload', dest = 'dry_run', action = 'store_true')
   parser.add_option('-t', '--retry', help = 'number of retries before giving up', dest = 'retry', type = int, default = DEFAULT_RETRY)
   parser.add_option('-c', '--num-threads', help = 'number of concurrent threads', type = int)
+  parser.add_option('-C', '--config', help='s3cmd config (used for keys only)', type = "string", dest = 'config')
   parser.add_option('-d', '--show-directory', help = 'show directory instead of its content', dest = 'show_dir', action = 'store_true')
   parser.add_option('--ignore-empty-source', help = 'ignore empty source from s3', dest = 'ignore_empty_source', action = 'store_true')
   parser.add_option('--use-ssl', help = 'use SSL connection to S3', dest = 'use_ssl', action = 'store_true')
@@ -1363,7 +1397,7 @@ if __name__ == '__main__':
   initialize(opt)
 
   # Initalize keys for S3.
-  S3Handler.init_s3_keys(opt.s3cfg)
+  S3Handler.init_s3_keys(options)
 
   try:
     CommandHandler(opt).run(args)
