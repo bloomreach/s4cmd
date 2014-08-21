@@ -1,0 +1,2 @@
+python:Depends=python:any, python:any (>= 2.7.1-0ubuntu2), python-boto
+misc:Depends=

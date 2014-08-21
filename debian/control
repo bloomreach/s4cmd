@@ -1,0 +1,24 @@
+Source: s4cmd
+Section: utils
+Priority: optional
+Maintainer: Sean Reifschneider <sean@realgo.com>
+Build-Depends: debhelper (>= 7.0.50~), python
+Standards-Version: 3.9.3
+Homepage: https://github.com/bloomreach/s4cmd
+
+Package: s4cmd
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}, python-boto
+Description: Super Amazon S3 command line tool
+ We have used s3cmd heavily for a number of scripted, data-intensive
+ applications. However as the need for a variety of small improvements
+ arose, we created our own implementation, s4cmd. It is intended as an
+ alternative to s3cmd for enhanced performance and for large files, and
+ with a number of additional features and fixes that we have found useful.
+ .
+ It strives to be compatible with the most common usage scenarios for
+ s3cmd. It does not offer exact drop-in compatibility, due to a number of
+ corner cases where different behavior seems preferable, or for bugfixes.
+ .
+ S4cmd supports the regular commands you might expect for fetching and
+ storing files in S3: ls, put, get, cp, mv, sync, del, du.

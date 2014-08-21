@@ -3,7 +3,7 @@
 ### Super S3 command line tool
 
 Chou-han Yang  
-2012-11-09 (covers s4cmd version 1.5.7)
+2012-11-09 (covers s4cmd version 1.5.19)
 
 ## Motivation
 
