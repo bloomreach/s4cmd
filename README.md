@@ -68,13 +68,16 @@ Limitations:
 - Currently, we simulate `sync` with `get` and `put` with `--recursive --force --sync-check`.
 
 
-## Setup
+## Installation and Setup
+You can install `s4cmd` [PyPI](https://pypi.python.org/pypi/s4cmd).
 
-- Ensure Boto library v2.3.1 or later is installed.
-- Copy or create a symbolic link so you can run s4cmd.py as `s4cmd`. (It is just a single file!)
-- If you already have a .s3cfg file, credentials from this file will be used.
-  Otherwise, set the S3_ACCESS_KEY and S3_SECRET_KEY environment variables
-  to contain your S3 credentials.
+```
+pip install s4cmd
+```
+
+If you already have a `~/.s3cfg` file from configuring `s3cmd`, credentials
+from this file will be used.  Otherwise, set the S3_ACCESS_KEY and
+S3_SECRET_KEY environment variables to contain your S3 credentials.
 
 
 ## Common Commands
