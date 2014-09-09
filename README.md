@@ -75,9 +75,11 @@ You can install `s4cmd` [PyPI](https://pypi.python.org/pypi/s4cmd).
 pip install s4cmd
 ```
 
-If you already have a `~/.s3cfg` file from configuring `s3cmd`, credentials
-from this file will be used.  Otherwise, set the S3_ACCESS_KEY and
-S3_SECRET_KEY environment variables to contain your S3 credentials.
+- Copy or create a symbolic link so you can run `s4cmd.py` as `s4cmd`. (It is just
+a single file!)
+- If you already have a `~/.s3cfg` file from configuring `s3cmd`, credentials
+from this file will be used.  Otherwise, set the `S3_ACCESS_KEY` and
+`S3_SECRET_KEY` environment variables to contain your S3 credentials.
 
 
 ## Common Commands
