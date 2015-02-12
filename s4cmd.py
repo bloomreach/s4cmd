@@ -38,7 +38,8 @@ S4CMD_VERSION = "1.5.19"
 
 SINGLEPART_UPLOAD_MAX = 4500 * 1024 * 1024 # Max file size to upload without S3 multipart upload
 SINGLEPART_DOWNLOAD_MAX = 50 * 1024 * 1024 # Max file size to download with single thread
-DEFAULT_SPLIT = 50 * 1024 * 1024
+DEFAULT_SPLIT_IN_MB = 50
+DEFAULT_SPLIT = DEFAULT_SPLIT_IN_MB * 1024 * 1024
 DEFAULT_RETRY = 3
 RETRY_DELAY = 10
 PATH_SEP = '/'
@@ -79,6 +80,7 @@ class Options:
     self.delete_removed = (opt and opt.delete_removed != None)
     self.ignore_empty_source = (opt and opt.ignore_empty_source)
     self.retry = opt.retry if opt else DEFAULT_RETRY
+    self.multipart_split_size = (opt.multipart_split_size * 1024 * 1024) if opt else DEFAULT_SPLIT
     if opt and opt.num_threads:
       self.num_threads = opt.num_threads
     else:
@@ -1042,7 +1044,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       # different md5 values.
       mpu = bucket.initiate_multipart_upload(s3url.path, metadata = {'md5': self.file_hash(source), 'privilege': self.get_file_privilege(source)})
 
-      for args in self.get_file_splits(mpu.id, source, target, fsize, DEFAULT_SPLIT):
+      for args in self.get_file_splits(mpu.id, source, target, fsize, self.opt.multipart_split_size):
         self.pool.upload(*args)
       return
 
@@ -1118,7 +1120,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       return
 
     # Here we use temp filename as the id of mpi.
-    for args in self.get_file_splits(tempfile_get(target), source, target, fsize, DEFAULT_SPLIT):
+    for args in self.get_file_splits(tempfile_get(target), source, target, fsize, self.opt.multipart_split_size):
       self.pool.download(*args)
     return
 
@@ -1385,6 +1387,7 @@ if __name__ == '__main__':
   parser.add_option('-t', '--retry', help = 'number of retries before giving up', dest = 'retry', type = int, default = DEFAULT_RETRY)
   parser.add_option('-c', '--num-threads', help = 'number of concurrent threads', type = int)
   parser.add_option('-d', '--show-directory', help = 'show directory instead of its content', dest = 'show_dir', action = 'store_true')
+  parser.add_option('--multipart-split-size', help = 'size in MB to split multipart transfers', type = int, default = DEFAULT_SPLIT_IN_MB)
   parser.add_option('--ignore-empty-source', help = 'ignore empty source from s3', dest = 'ignore_empty_source', action = 'store_true')
   parser.add_option('--use-ssl', help = 'use SSL connection to S3', dest = 'use_ssl', action = 'store_true')
   parser.add_option('--verbose', help = 'verbose output', dest = 'verbose', action = 'store_true')
