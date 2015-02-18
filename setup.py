@@ -35,7 +35,7 @@ setup(name='s4cmd',
       author=__author__,
       license=__license__,
       url='https://github.com/bloomreach/s4cmd',
-      packages=find_packages(),
-      scripts=['s4cmd.py'],
+      py_modules=['s4cmd'],
+      scripts=['s4cmd', 's4cmd.py'], # Added s4cmd.py as script for backward compatibility
       install_requires=['boto>=2.3.0'],
     )
