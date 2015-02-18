@@ -34,7 +34,7 @@ import boto.exception
 ## Global constants
 ##
 
-S4CMD_VERSION = "1.5.19"
+S4CMD_VERSION = "1.5.20"
 
 SINGLEPART_UPLOAD_MAX = 4500 # Max file size (in MB) to upload without S3 multipart upload
 SINGLEPART_DOWNLOAD_MAX = 50 # Max file size (in MB) to download with single thread
@@ -1460,3 +1460,5 @@ if __name__ == '__main__':
 #   - 1.5.17: Check file size consistency after download; will retry the download if inconsistent.
 #   - 1.5.18: Use validate=self.opt.validate to prevent extraneous list API calls.
 #   - 1.5.19: Set socket.setdefaulttimeout() to prevent boto/s3 socket read block in httplib.
+#   - 1.5.20: Merge change from oniltonmaciel@github for arguments for multi-part upload.
+#             Fix setup.py for module and command line tool
