@@ -25,7 +25,7 @@ from setuptools import setup, find_packages
 __author__ = "Chou-han Yang"
 __copyright__ = "Copyright 2014 BloomReach, Inc."
 __license__ = "http://www.apache.org/licenses/LICENSE-2.0"
-__version__ = "1.5.19"
+__version__ = "1.5.20"
 __maintainer__ = __author__
 __status__ = "Development"
 
