@@ -450,7 +450,7 @@ class S3Handler(object):
     '''Initialize s3 access keys from environment variable or s3cfg config file.'''
     S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg(opt)
 
-  def __init__(self):
+  def __init__(self, opt):
     '''Constructor, connect to S3 store'''
     self.s3 = None
     self.opt = opt
