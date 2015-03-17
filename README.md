@@ -2,7 +2,7 @@
 
 ### Super S3 command line tool
 
-Chou-han Yang  
+Chou-han Yang
 2012-11-09 (covers s4cmd version 1.5.19)
 
 ## Motivation
@@ -13,7 +13,7 @@ S4cmd is a command-line utility for accessing
 
 We have used s3cmd heavily for a number of scripted, data-intensive
 applications. However as the need for a variety of small improvements arose, we
-created our own implementation, s4cmd. It is intended as an alternative to 
+created our own implementation, s4cmd. It is intended as an alternative to
 s3cmd for enhanced performance and for large files, and with a number of
 additional features and fixes that we have found useful.
 
@@ -36,7 +36,7 @@ The main features that distinguish s4cmd are:
   accessing S3 in a single-threaded way is often significantly less efficient than
   having multiple connections actively transferring data at once.  In general, we
   get a 2X boost to upload/download speeds from this.
-- Path handling: S3 is not a traditional filesytsem with built-in support for
+- Path handling: S3 is not a traditional filesystem with built-in support for
   directory structure: internally, there are only objects, not directories or
   folders. However, most people use S3 in a hierarchical structure, with paths
   separated by slashes, to emulate traditional filesystems. S4cmd follows
@@ -118,7 +118,7 @@ from this file will be used.  Otherwise, set the `S3_ACCESS_KEY` and
 >
 > Available parameters:
 >>*   -r/--recursive: also sync directories recursively.
->>*   -s/--sync-check: check md5 hash to avoid synching the same content.
+>>*   -s/--sync-check: check md5 hash to avoid syncing the same content.
 >>*   -f/--force: override existing file instead of showing error message.
 >>*   -n/--dry-run: emulate the operation without real sync.
 
@@ -193,7 +193,7 @@ s3cmd get s3://my-bucket/no_such_file downloads an empty file.
 s4cmd get s3://my-bucket/no_such_file returns an error.
 s3cmd put no_such_file s3://my-bucket/ uploads an empty file.
 s4cmd put no_such_file s3://my-bucket/ returns an error.
-    
+
 
 ## Additional technical notes
 
