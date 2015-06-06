@@ -53,16 +53,12 @@ import boto.exception
 
 S4CMD_VERSION = "1.5.20"
 
-SINGLEPART_UPLOAD_MAX = 4500 # Max file size (in MB) to upload without S3 multipart upload
-SINGLEPART_DOWNLOAD_MAX = 50 # Max file size (in MB) to download with single thread
-DEFAULT_SPLIT = 50 # in MB
-DEFAULT_RETRY = 3
-RETRY_DELAY = 10
 PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
 TIMESTAMP_REGEX = re.compile(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}).(\d{3})Z')
 TIMESTAMP_FORMAT = '%4s-%2s-%2s %2s:%2s'
 SOCKET_TIMEOUT = 5 * 60 # in sec(s) (timeout if we don't receive any recv() callback)
+socket.setdefaulttimeout(SOCKET_TIMEOUT)
 
 # Global list for temp files.
 TEMP_FILES = set()
@@ -77,38 +73,13 @@ S3_SECRET_KEY_NAME = "S3_SECRET_KEY"
 ##
 
 class Options:
-  '''Default wrapper for running options
-     This class contains most running options with default values. They can
-     be overwritten by command line options.
+  '''Default option class for available options. Use the default value from opt parser.
+     The values can be overwritten by command line options or set at run-time.
   '''
   def __init__(self, opt = None):
-    if opt == None: opt = False # Set opt to False as the default value for other options.
-    self.s3cfg = opt.s3cfg if opt else None
-    self.recursive = (opt and opt.recursive != None)
-    self.force = (opt and opt.force != None)
-    self.sync_check = (opt and opt.sync_check != None)
-    self.dry_run = (opt and opt.dry_run != None)
-    self.verbose = (opt and opt.verbose != None)
-    self.debug = (opt and opt.debug != None)
-    self.validate = (opt and opt.validate != None)
-    self.use_ssl = (opt and opt.use_ssl != None)
-    self.show_dir = (opt and opt.show_dir != None)
-    self.delete_removed = (opt and opt.delete_removed != None)
-    self.ignore_empty_source = (opt and opt.ignore_empty_source)
-    self.retry = opt.retry if opt else DEFAULT_RETRY
-    self.multipart_split_size = opt.multipart_split_size if opt else DEFAULT_SPLIT
-    self.max_singlepart_download_size = opt.max_singlepart_download_size if opt else SINGLEPART_DOWNLOAD_MAX
-    self.max_singlepart_upload_size = opt.max_singlepart_upload_size if opt else SINGLEPART_UPLOAD_MAX
-
-    # Convert multipart sizes to bytes
-    self.multipart_split_size = self.multipart_split_size * 1024 * 1024
-    self.max_singlepart_download_size = self.max_singlepart_download_size * 1024 * 1024
-    self.max_singlepart_upload_size = self.max_singlepart_upload_size * 1024 * 1024
-
-    if opt and opt.num_threads:
-      self.num_threads = opt.num_threads
-    else:
-      self.num_threads = int(os.getenv('S4CMD_NUM_THREADS', multiprocessing.cpu_count() * 4))
+    parser = get_opt_parser()
+    for o in parser.option_list:
+      self.__dict__[o.dest] = o.default if (opt is None) or (opt.__dict__[o.dest] is None) else opt.__dict__[o.dest]
 
 class Failure(RuntimeError):
   '''Exception for runtime failures'''
@@ -122,43 +93,45 @@ class RetryFailure(Exception):
   '''Runtime failure that can be retried'''
   pass
 
-def initialize(opt = None):
-  '''Initialization of this tool. Setup loggers.'''
 
-  # Set low-level socket timeout to prevent read blocking.
-  socket.setdefaulttimeout(SOCKET_TIMEOUT)
+class S4cmdLoggingClass:
+  def __init__(self):
+    self.log = logging.Logger("s4cmd")
+    self.log.stream = sys.stderr
+    self.log_handler = logging.StreamHandler(self.log.stream)
+    self.log.addHandler(self.log_handler)
 
-  if not opt:
-    opt = Options()
 
-  global log
-  log = logging.Logger("s4cmd")
+  def configure(self, opt):
+    'Configure the logger based on command-line arguments'''
 
-  if opt.debug:
-    verbosity = 3
-  elif opt.verbose:
-    verbosity = 2
-  else:
-    verbosity = 1
+    self.log_handler.setFormatter(logging.Formatter('%(message)s', DATETIME_FORMAT))
+    if opt.debug:
+      self.log.verbosity = 3
+      self.log_handler.setFormatter(logging.Formatter(
+          '  (%(levelname).1s)%(filename)s:%(lineno)-4d %(message)s',
+          DATETIME_FORMAT))
+      self.log.setLevel(logging.DEBUG)
+    elif opt.verbose:
+      self.log.verbosity = 2
+      self.log.setLevel(logging.INFO)
+    else:
+      self.log.verbosity = 1
+      self.log.setLevel(logging.ERROR)
 
-  log.verbosity = verbosity
-  log.stream = sys.stderr
 
-  log_handler = logging.StreamHandler(log.stream)
-  log.addHandler(log_handler)
+  def get_loggers(self):
+    '''Return a list of the logger methods: (debug, info, warn, error)'''
 
-  if verbosity == 3:
-    log_handler.setFormatter(logging.Formatter('  (%(levelname).1s)%(filename)s:%(lineno)-4d %(message)s', DATETIME_FORMAT))
-    log.setLevel(logging.DEBUG)
-  elif verbosity == 2:
-    log_handler.setFormatter(logging.Formatter('%(message)s', DATETIME_FORMAT))
-    log.setLevel(logging.INFO)
-  else:
-    log_handler.setFormatter(logging.Formatter('%(message)s', DATETIME_FORMAT))
-    log.setLevel(logging.ERROR)
+    return self.log.debug, self.log.info, self.log.warn, self.log.error
 
-# Call initalize() by default.
-initialize()
+s4cmd_logging = S4cmdLoggingClass()
+debug, info, warn, error = s4cmd_logging.get_loggers()
+
+
+def get_default_thread_count():
+  return int(os.getenv('S4CMD_NUM_THREADS', multiprocessing.cpu_count() * 4))
+
 
 def log_calls(func):
   '''Decorator to log function calls.'''
@@ -181,22 +154,6 @@ def synchronized(func):
     with func.__lock__:
       return func(*args, **kargs)
   return synced_func
-
-def debug(msg, *args):
-  '''Debug output wrapper.'''
-  log.debug(msg, *args)
-
-def info(msg, *args):
-  '''Program verbose information output.'''
-  log.info(msg, *args)
-
-def warn(msg, *args):
-  '''Program warnings.'''
-  log.warn(msg, *args)
-
-def error(msg, *args):
-  '''Program error output.'''
-  log.error(msg, *args)
 
 def clear_progress():
   '''Clear previous progress message, if any.'''
@@ -401,7 +358,7 @@ class ThreadPool(object):
             # Show content of exceptions.
             error(e)
 
-          time.sleep(RETRY_DELAY)
+          time.sleep(self.opt.retry_delay)
           self.pool.tasks.put((func_name, retry + 1, args, kargs))
         finally:
           self.pool.processed()
@@ -490,7 +447,7 @@ class S3Handler(object):
     env = os.environ
     if S3_ACCESS_KEY_NAME in env and S3_SECRET_KEY_NAME in env:
       keys = (env[S3_ACCESS_KEY_NAME], env[S3_SECRET_KEY_NAME])
-      log.debug("read S3 keys from environment")
+      debug("read S3 keys from environment")
       return keys
     else:
       return None
@@ -508,23 +465,19 @@ class S3Handler(object):
       config = ConfigParser.ConfigParser()
       config.read(s3cfg_path)
       keys = config.get("default", "access_key"), config.get("default", "secret_key")
-      log.debug("read S3 keys from $HOME/.s3cfg file")
+      debug("read S3 keys from $HOME/.s3cfg file")
       return keys
     except Exception as e:
-      log.info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
+      info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
       return None
 
   @staticmethod
-  def init_s3_keys(opt=None):
-    '''Initialize s3 access keys from environment varialbe or s3cfg config file.'''
-    if opt is None:
-      opt = Options()
+  def init_s3_keys(opt):
+    '''Initialize s3 access keys from environment variable or s3cfg config file.'''
     S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg(opt)
 
-  def __init__(self, opt=None):
+  def __init__(self, opt):
     '''Constructor, connect to S3 store'''
-    if opt is None:
-      opt = Options()
     self.s3 = None
     self.opt = opt
     self.connect()
@@ -1402,30 +1355,70 @@ if __name__ == '__main__':
 
   # Parser for command line options.
   parser = optparse.OptionParser(description = 'Super S3 command line tool. Version %s' % S4CMD_VERSION)
-  parser.add_option('-p', '--config', help = 'path to s3cfg config file', dest = 's3cfg', type = 'string', default = None)
-  parser.add_option('-f', '--force', help = 'force overwrite files when download or upload', dest = 'force', action = 'store_true')
-  parser.add_option('-r', '--recursive', help = 'recursively checking subdirectories', dest = 'recursive', action = 'store_true')
-  parser.add_option('-D', '--delete-removed', help = 'delete remote files that do not exist locally', dest = 'delete_removed', action = 'store_true')
-  parser.add_option('-s', '--sync-check', help = 'check file md5 before download or upload', dest = 'sync_check', action = 'store_true')
-  parser.add_option('-n', '--dry-run', help = 'trial run without actual download or upload', dest = 'dry_run', action = 'store_true')
-  parser.add_option('-t', '--retry', help = 'number of retries before giving up', dest = 'retry', type = int, default = DEFAULT_RETRY)
-  parser.add_option('-c', '--num-threads', help = 'number of concurrent threads', type = int)
-  parser.add_option('-d', '--show-directory', help = 'show directory instead of its content', dest = 'show_dir', action = 'store_true')
-  parser.add_option('--multipart-split-size', help = 'size in MB to split multipart transfers', type = int, default = DEFAULT_SPLIT)
-  parser.add_option('--max-singlepart-download-size', help = 'files with size (in MB) greater than this will be downloaded in multipart transfers', type = int, default = SINGLEPART_DOWNLOAD_MAX)
-  parser.add_option('--max-singlepart-upload-size', help = 'files with size (in MB) greater than this will be uploaded in multipart transfers', type = int, default = SINGLEPART_UPLOAD_MAX)
-  parser.add_option('--ignore-empty-source', help = 'ignore empty source from s3', dest = 'ignore_empty_source', action = 'store_true')
-  parser.add_option('--use-ssl', help = 'use SSL connection to S3', dest = 'use_ssl', action = 'store_true')
-  parser.add_option('--verbose', help = 'verbose output', dest = 'verbose', action = 'store_true')
-  parser.add_option('--debug', help = 'debug output', dest = 'debug', action = 'store_true')
-  parser.add_option('--validate', help = 'validate lookup operation', dest = 'validate', action = 'store_true')
+  parser.add_option(
+      '-p', '--config', help = 'path to s3cfg config file', dest = 's3cfg',
+      type = 'string', default = None)
+  parser.add_option(
+      '-f', '--force', help = 'force overwrite files when download or upload',
+      dest = 'force', action = 'store_true', default = False)
+  parser.add_option(
+      '-r', '--recursive', help = 'recursively checking subdirectories',
+      dest = 'recursive', action = 'store_true', default = False)
+  parser.add_option(
+      '-s', '--sync-check', help = 'check file md5 before download or upload',
+      dest = 'sync_check', action = 'store_true', default = False)
+  parser.add_option(
+      '-n', '--dry-run', help = 'trial run without actual download or upload',
+      dest = 'dry_run', action = 'store_true', default = False)
+  parser.add_option(
+      '-t', '--retry', help = 'number of retries before giving up',
+      dest = 'retry', type = int, default = 3)
+  parser.add_option(
+      '--retry-delay', help = 'seconds to sleep between retries',
+      type = int, default = 10)
+  parser.add_option(
+      '-c', '--num-threads', help = 'number of concurrent threads',
+      type = int, default = get_default_thread_count())
+  parser.add_option(
+      '-d', '--show-directory', help = 'show directory instead of its content',
+      dest = 'show_dir', action = 'store_true', default = False)
+  parser.add_option(
+      '--ignore-empty-source', help = 'ignore empty source from s3',
+      dest = 'ignore_empty_source', action = 'store_true', default = False)
+  parser.add_option(
+      '--use-ssl', help = 'use SSL connection to S3', dest = 'use_ssl',
+      action = 'store_true', default = False)
+  parser.add_option(
+      '--verbose', help = 'verbose output', dest = 'verbose',
+      action = 'store_true', default = False)
+  parser.add_option(
+      '--debug', help = 'debug output', dest = 'debug',
+      action = 'store_true', default = False)
+  parser.add_option(
+      '--validate', help = 'validate lookup operation', dest = 'validate',
+      action = 'store_true', default = False)
+  parser.add_option(
+      '-D', '--delete-removed',
+      help = 'delete remote files that do not exist locally',
+      dest = 'delete_removed', action = 'store_true', default = False)
+  parser.add_option(
+      '--multipart-split-size',
+      help = 'size in MB to split multipart transfers', type = int,
+      default = 50 * 1024 * 1024)
+  parser.add_option(
+      '--max-singlepart-download-size',
+      help = 'files with size (in MB) greater than this will be downloaded in '
+      'multipart transfers', type = int, default = 50 * 1024 * 1024)
+  parser.add_option(
+      '--max-singlepart-upload-size',
+      help = 'files with size (in MB) greater than this will be uploaded in '
+      'multipart transfers', type = int, default = 4500 * 1024 * 1024)
 
-  (options, args) = parser.parse_args()
-  opt = Options(options)
-  initialize(opt)
+  (opt, args) = parser.parse_args()
+  s4cmd_logging.configure(opt)
 
   # Initalize keys for S3.
-  S3Handler.init_s3_keys(options)
+  S3Handler.init_s3_keys(opt)
 
   try:
     CommandHandler(opt).run(args)
@@ -1479,3 +1472,4 @@ if __name__ == '__main__':
 #   - 1.5.19: Set socket.setdefaulttimeout() to prevent boto/s3 socket read block in httplib.
 #   - 1.5.20: Merge change from oniltonmaciel@github for arguments for multi-part upload.
 #             Fix setup.py for module and command line tool
+#   - 1.5.21: Merge changes from linsomniac@github for better argument parsing
