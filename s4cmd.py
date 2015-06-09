@@ -21,8 +21,25 @@
 Super S3 command line tool.
 """
 
-import sys, os, re, optparse, multiprocessing, cStringIO, fnmatch, time, hashlib, errno
-import logging, traceback, Queue, types, threading, random, ConfigParser, socket
+import sys, os, re, optparse, multiprocessing, fnmatch, time, hashlib, errno
+import logging, traceback, types, threading, random, socket
+
+IS_PYTHON2 = sys.version_info[0] == 2
+
+if IS_PYTHON2:
+  from cStringIO import StringIO
+  import Queue
+  import ConfigParser
+else:
+  from io import StringIO
+  import queue as Queue
+  import configparser  as ConfigParser
+
+  def cmp(a, b):
+    return (a > b) - (a < b)
+
+from functools import cmp_to_key
+
 
 # We need boto 2.3.0 for multipart upload1
 import boto
@@ -119,7 +136,7 @@ def get_default_thread_count():
 def log_calls(func):
   '''Decorator to log function calls.'''
   def wrapper(*args, **kwargs):
-    callStr = "%s(%s)" % (func.__name__, ", ".join([repr(p) for p in args] + ["%s=%s" % (k, repr(v)) for (k, v) in kwargs.items()]))
+    callStr = "%s(%s)" % (func.__name__, ", ".join([repr(p) for p in args] + ["%s=%s" % (k, repr(v)) for (k, v) in list(kwargs.items())]))
     debug(">> %s", callStr)
     ret = func(*args, **kwargs)
     debug("<< %s: %s", callStr, repr(ret))
@@ -318,10 +335,10 @@ class ThreadPool(object):
         try:
           func_name, retry, args, kargs = item
           self.__class__.__dict__[func_name](self, *args, **kargs)
-        except InvalidArgument, e:
+        except InvalidArgument as e:
           self.pool.tasks.terminate(e)
           fail('[Invalid Argument] ', exc_info = e)
-        except Failure, e:
+        except Failure as e:
           self.pool.tasks.terminate(e)
           fail('[Runtime Failure] ', exc_info = e)
         # Also retry known S3ResponseError since S3 has transient
@@ -329,10 +346,10 @@ class ThreadPool(object):
         # except boto.exception.S3ResponseError, e:
         #   self.pool.tasks.terminate(e)
         #   fail('[S3ResponseError] %s: %s' % (e.error_code, e.error_message))
-        except OSError, e:
+        except OSError as e:
           self.pool.tasks.terminate(e)
           fail('[OSError] %d: %s' % (e.errno, e.strerror))
-        except Exception, e:
+        except Exception as e:
           # XXX Should we retry on all unknown exceptions?
           if retry >= self.opt.retry:
             self.pool.tasks.terminate(e)
@@ -377,7 +394,7 @@ class ThreadPool(object):
     '''
     try:
       attr = super(ThreadPool, self).__getattribute__(name)
-    except AttributeError, e:
+    except AttributeError as e:
       if name in self.thread_class.__dict__:
         # Here we masquerade the original function with add_task(). So the
         # function call will be put into task queue.
@@ -450,7 +467,7 @@ class S3Handler(object):
       keys = config.get("default", "access_key"), config.get("default", "secret_key")
       debug("read S3 keys from $HOME/.s3cfg file")
       return keys
-    except Exception, e:
+    except Exception as e:
       info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
       return None
 
@@ -482,7 +499,7 @@ class S3Handler(object):
       else:
         self.s3 = boto.connect_s3(is_secure = self.opt.use_ssl,
                                   suppress_consec_slashes = False)
-    except Exception, e:
+    except Exception as e:
       raise RetryFailure('Unable to connect to s3: %s' % e)
 
   @log_calls
@@ -536,8 +553,8 @@ class S3Handler(object):
       if result != 0:
         return result
       return cmp(x['name'], y['name'])
-
-    return sorted(result, compare)
+    compare = cmp_to_key(compare)
+    return sorted(result, key=compare)
 
   @log_calls
   def local_walk(self, basedir):
@@ -565,7 +582,7 @@ class S3Handler(object):
     '''
     result = []
 
-    if not isinstance(source, types.ListType):
+    if not isinstance(source, list):
       source = [source]
 
     for src in source:
@@ -587,7 +604,7 @@ class S3Handler(object):
     '''Upload a single file or a directory by adding a task into queue'''
     if os.path.isdir(source):
       if self.opt.recursive:
-        for f in filter(lambda f: not os.path.isdir(f), self.local_walk(source)):
+        for f in [f for f in self.local_walk(source) if not os.path.isdir(f)]:
           target_url = S3URL(target)
           # deal with ./ or ../ here by normalizing the path.
           joined_path = os.path.normpath(os.path.join(target_url.path, os.path.relpath(f, source)))
@@ -605,7 +622,7 @@ class S3Handler(object):
        directory structure under the given source directory.
     '''
     pool = ThreadPool(ThreadUtil, self.opt)
-    if not isinstance(source, types.ListType):
+    if not isinstance(source, list):
       source = [source]
 
     if target[-1] == PATH_SEP:
@@ -634,7 +651,7 @@ class S3Handler(object):
     if source[-1] == PATH_SEP:
       if self.opt.recursive:
         basepath = S3URL(source).path
-        for f in filter(lambda f: not f['is_dir'], self.s3walk(source)):
+        for f in [f for f in self.s3walk(source) if not f['is_dir']]:
           pool.download(None, f['name'], os.path.join(target, os.path.relpath(S3URL(f['name']).path, basepath)))
       else:
         message('omitting directory "%s".' % source)
@@ -674,7 +691,7 @@ class S3Handler(object):
     if os.path.isdir(source):
       unecessary = []
       basepath = S3URL(target).path
-      for f in filter(lambda f: not f['is_dir'], self.s3walk(target)):
+      for f in [f for f in self.s3walk(target) if not f['is_dir']]:
         local_name = os.path.join(source, os.path.relpath(S3URL(f['name']).path, basepath))
         if not os.path.isfile(local_name):
           message("%s not found locally, adding to delete queue", local_name)
@@ -694,7 +711,7 @@ class S3Handler(object):
     if source[-1] == PATH_SEP:
       if self.opt.recursive:
         basepath = S3URL(source).path
-        for f in filter(lambda f: not f['is_dir'], self.s3walk(source)):
+        for f in [f for f in self.s3walk(source) if not f['is_dir']]:
           pool.copy(f['name'], os.path.join(target, os.path.relpath(S3URL(f['name']).path, basepath)), delete_source)
       else:
         message('omitting directory "%s".' % source)
@@ -830,7 +847,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       # between the check and creation of the directory.
       try:
         os.makedirs(path)
-      except OSError, ose:
+      except OSError as ose:
         if ose.errno != errno.EEXIST:
           raise Failure('Unable to create directory (%s)' % (path,))
 
@@ -966,7 +983,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     '''Get privileges of a local file'''
     try:
       return str(oct(os.stat(source).st_mode)[-3:])
-    except Exception, e:
+    except Exception as e:
       raise Failure('Could not get stat for %s, error_message = %s', source, e)
 
   @log_calls
@@ -1023,14 +1040,14 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     if not data:
       raise Failure('Unable to read data from source: %s' % source)
 
-    mpu.upload_part_from_file(cStringIO.StringIO(data), part)
+    mpu.upload_part_from_file(StringIO(data), part)
 
     # Finalize
     if mpi.complete():
       try:
         mpu.complete_upload()
         message('%s => %s', source, target)
-      except Exception, e:
+      except Exception as e:
         mpu.cancel_upload()
         raise RetryFailure('Upload failed: Unable to complete upload %s.' % source)
 
@@ -1073,7 +1090,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         self._verify_file_size(key, tempfile)
         tempfile_set(tempfile, target)
         message('%s => %s', source, target)
-      except Exception, e:
+      except Exception as e:
         tempfile_set(tempfile, None)
         raise RetryFailure('Download Failure: %s, Source: %s.' % (e.message, source))
 
@@ -1122,7 +1139,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         self._verify_file_size(key, tempfile)
         tempfile_set(tempfile, target)
         message('%s => %s', source, target)
-      except Exception, e:
+      except Exception as e:
         # Note that we don't retry in this case, because
         # We are going to remove the temp file, and if we
         # retry here with original parameters (wrapped in
@@ -1172,7 +1189,7 @@ class CommandHandler(object):
     if len(args) == 0:
       raise InvalidArgument('No command provided')
     cmd = args[0]
-    if CommandHandler.__dict__.has_key(cmd + '_handler'):
+    if cmd + '_handler' in CommandHandler.__dict__:
       CommandHandler.__dict__[cmd + '_handler'](self, args)
     else:
       raise InvalidArgument('Unknown command %s' % cmd)
@@ -1198,7 +1215,7 @@ class CommandHandler(object):
     for i, fmt in enumerate(fmts):
       valid = False
       for f in fmt.split(','):
-        if f == 'cmd' and CommandHandler.__dict__.has_key(args[i] + '_handler'):
+        if f == 'cmd' and args[i] + '_handler' in CommandHandler.__dict__:
           valid = True
         if f == 's3' and S3URL.is_valid(args[i]):
           valid = True
@@ -1405,13 +1422,13 @@ if __name__ == '__main__':
 
   try:
     CommandHandler(opt).run(args)
-  except InvalidArgument, e:
+  except InvalidArgument as e:
     fail('[Invalid Argument] ', exc_info = e)
-  except Failure, e:
+  except Failure as e:
     fail('[Runtime Failure] ', exc_info = e)
-  except boto.exception.S3ResponseError, e:
+  except boto.exception.S3ResponseError as e:
     fail('[S3ResponseError] %s: %s' % (e.error_code, e.error_message))
-  except Exception, e:
+  except Exception as e:
     fail('[Runtime Exception] ', exc_info = e, stacktrace = True)
 
   clean_tempfiles()
@@ -1456,3 +1473,4 @@ if __name__ == '__main__':
 #   - 1.5.20: Merge change from oniltonmaciel@github for arguments for multi-part upload.
 #             Fix setup.py for module and command line tool
 #   - 1.5.21: Merge changes from linsomniac@github for better argument parsing
+#   - 1.5.22: Add compatibility for Python3
