@@ -1473,3 +1473,4 @@ if __name__ == '__main__':
 #   - 1.5.20: Merge change from oniltonmaciel@github for arguments for multi-part upload.
 #             Fix setup.py for module and command line tool
 #   - 1.5.21: Merge changes from linsomniac@github for better argument parsing
+#   - 1.5.22: Add compatibility for Python3
