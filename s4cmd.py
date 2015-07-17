@@ -496,6 +496,10 @@ class S3Handler(object):
                                   S3Handler.S3_KEYS[1],
                                   is_secure = self.opt.use_ssl,
                                   suppress_consec_slashes = False)
+      elif self.opt.profile:
+        self.s3 = boto.connect_s3(is_secure = self.opt.use_ssl,
+                                  suppress_consec_slashes = False,
+                                  profile_name = self.opt.profile)
       else:
         self.s3 = boto.connect_s3(is_secure = self.opt.use_ssl,
                                   suppress_consec_slashes = False)
@@ -1383,6 +1387,9 @@ if __name__ == '__main__':
       '-d', '--show-directory', help = 'show directory instead of its content',
       dest = 'show_dir', action = 'store_true', default = False)
   parser.add_option(
+      '-P', '--profile', help = 'Optional AWS profile to authenticate with',
+      dest = 'profile', type = 'string', default = False)
+  parser.add_option(
       '--ignore-empty-source', help = 'ignore empty source from s3',
       dest = 'ignore_empty_source', action = 'store_true', default = False)
   parser.add_option(
@@ -1474,3 +1481,4 @@ if __name__ == '__main__':
 #             Fix setup.py for module and command line tool
 #   - 1.5.21: Merge changes from linsomniac@github for better argument parsing
 #   - 1.5.22: Add compatibility for Python3
+#   - 1.5.23: Add optional AWS profile authentication
