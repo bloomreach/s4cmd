@@ -38,8 +38,11 @@ else:
   def cmp(a, b):
     return (a > b) - (a < b)
 
-from functools import cmp_to_key
-
+if sys.version_info < (2, 7):
+    # Python < 2.7 doesn't have the cmp_to_key function.
+    from utils import cmp_to_key
+else:
+    from functools import cmp_to_key
 
 # We need boto 2.3.0 for multipart upload1
 import boto
