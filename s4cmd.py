@@ -51,7 +51,7 @@ import boto.exception
 ## Global constants
 ##
 
-S4CMD_VERSION = "1.5.20"
+S4CMD_VERSION = "1.5.23"
 
 PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
