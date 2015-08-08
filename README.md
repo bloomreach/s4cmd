@@ -215,4 +215,3 @@ still have to download and verify the MD5 directly.
 
 - Deletion with sync command.
 - CloudFront or other feature support beyond basic S3 access.
-- Command-line auto-complete.

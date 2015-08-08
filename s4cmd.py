@@ -51,7 +51,7 @@ import boto.exception
 ## Global constants
 ##
 
-S4CMD_VERSION = "1.5.20"
+S4CMD_VERSION = "1.5.23"
 
 PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
@@ -1474,3 +1474,4 @@ if __name__ == '__main__':
 #             Fix setup.py for module and command line tool
 #   - 1.5.21: Merge changes from linsomniac@github for better argument parsing
 #   - 1.5.22: Add compatibility for Python3
+#   - 1.5.23: Add bash command line completion

@@ -1,0 +1,69 @@
+_s4cmd ()
+{
+    local IFS=$' \n'
+    local cur prev words cword possibleparams
+    command=${COMP_WORDS[1]}
+    prev=${COMP_WORDS[COMP_CWORD-1]}
+    prevprev=${COMP_WORDS[COMP_CWORD-2]}
+    _init_completion || return
+
+    if [[ $cword -eq 1 ]]; then
+        #command
+        COMPREPLY=($( compgen -W 'ls put get cp mv sync del du' -- "$cur" ))
+        COMPREPLY=("${COMPREPLY[@]/%/ }")
+    elif [[ $cword -ge 2 ]]; then
+      params=${COMP_WORDS[@]:2}
+      if [ "$prevprev" == "s3" ]
+      then
+        #get initial bucket names
+        if [[ $cur =~ ^\/\/$ ]]; then
+          buckets=($(s4cmd ls 2>/dev/null | grep -Eo "s3://.*" | grep -Eo "//.*"))
+          COMPREPLY=($(compgen -W "$buckets" -- "$cur"))
+          return 0
+        
+        #help get buckets full names
+        elif [[ $cur =~ ^\/\/[^\/]*$ ]]; then
+            buckets=($(s4cmd ls 2>/dev/null | grep -Eo "s3://.*" | grep -Eo "//.*"))
+            COMPREPLY=($(compgen -W "$buckets" -- "$cur"))
+            return 0
+
+        #get contents of dir 
+        elif [[ $cur =~ ^\/\/.*\/$ ]]; then
+            buckets=($(s4cmd ls s3:$cur 2>/dev/null | grep -Eo "s3://.*" | grep -Eo "//.*"))
+            COMPREPLY=($(compgen -W "$buckets" -- "$cur"))
+            return 0
+  
+        #help get buckets contents
+        elif [[ $cur =~ ^\/\/.*\/.*$ ]]; then
+            checkdir=($(dirname "$cur"))
+            buckets=($(s4cmd ls s3:$checkdir 2>/dev/null | grep -Eo "s3://.*" | grep -Eo "//.*"))
+            COMPREPLY=($(compgen -W "$buckets" -- "$cur"))
+            return 0
+        fi
+      fi
+      case "$command" in
+        ls)
+          COMPREPLY=($(compgen -W "--recursive --show-directory" -- "$cur"))
+          COMPREPLY=("${COMPREPLY[@]/%/ }")
+          return 0
+          ;;
+        put|get|sync|cp|mv)
+          COMPREPLY=($(compgen -W "--recursive --sync-check --force --dry-run" -- "$cur"))
+          COMPREPLY=("${COMPREPLY[@]/%/ }")
+          return 0
+          ;;
+        del)
+          COMPREPLY=($(compgen -W "--recursive --dry-run" -- "$cur"))
+          COMPREPLY=("${COMPREPLY[@]/%/ }")
+          return 0
+          ;;
+        du)
+          COMPREPLY=($(compgen -W "--recursive" -- "$cur"))
+          COMPREPLY=("${COMPREPLY[@]/%/ }")
+          return 0
+          ;;
+      esac
+    fi
+} &&
+complete -o nospace -o default -F _s4cmd s4cmd
+
