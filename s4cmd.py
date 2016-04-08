@@ -1013,7 +1013,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         key = boto.s3.key.Key(bucket)
         key.key = s3url.path
         key.set_metadata('privilege',  self.get_file_privilege(source))
-        key.set_contents_from_filename(source)
+        key.set_contents_from_filename(source, reduced_redundancy=self.opt.reduced_redundancy)
         message('%s => %s', source, target)
         return
 
@@ -1413,6 +1413,9 @@ if __name__ == '__main__':
       '--max-singlepart-upload-size',
       help = 'files with size (in MB) greater than this will be uploaded in '
       'multipart transfers', type = int, default = 4500 * 1024 * 1024)
+  parser.add_option(
+      '--rr', '--reduced-redundancy', help = 'Store object with \'Reduced redundancy\'. Lower per-GB '
+      'price. [put, cp, mv]', dest = 'reduced_redundancy', action = 'store_true', default = False)
 
   (opt, args) = parser.parse_args()
   s4cmd_logging.configure(opt)
