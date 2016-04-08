@@ -1014,6 +1014,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         key.key = s3url.path
         key.set_metadata('privilege',  self.get_file_privilege(source))
         key.set_contents_from_filename(source)
+        if self.opt.acl_public:
+          key.set_acl('public-read')
         message('%s => %s', source, target)
         return
 
@@ -1413,6 +1415,10 @@ if __name__ == '__main__':
       '--max-singlepart-upload-size',
       help = 'files with size (in MB) greater than this will be uploaded in '
       'multipart transfers', type = int, default = 4500 * 1024 * 1024)
+  parser.add_option(
+      '-P', '--acl-public',
+      help = 'Store objects with ACL allowing read for anyone.',
+      dest = 'acl_public', action = 'store_true', default = False)
 
   (opt, args) = parser.parse_args()
   s4cmd_logging.configure(opt)
