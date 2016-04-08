@@ -1008,12 +1008,29 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       elif not self.opt.force and key:
         raise Failure('File already exists: %s' % target)
 
+      # extra headers
+      extra_headers = {}
+      if self.opt.add_header:
+        for hdr in self.opt.add_header:
+          try:
+            key, val = hdr.split(":", 1)
+          except ValueError:
+            raise Failure("Invalid header format: %s" % hdr)
+          key_inval = re.sub("[a-zA-Z0-9-.]", "", key)
+          if key_inval:
+            key_inval = key_inval.replace(" ", "<space>")
+            key_inval = key_inval.replace("\t", "<tab>")
+            raise ParameterError("Invalid character(s) in header name '%s': \"%s\"" % (key, key_inval))
+          extra_headers[key.strip().lower()] = val.strip()
+
       # Small file optimization.
       if fsize < self.opt.max_singlepart_upload_size:
         key = boto.s3.key.Key(bucket)
         key.key = s3url.path
         key.set_metadata('privilege',  self.get_file_privilege(source))
-        key.set_contents_from_filename(source)
+        key.set_contents_from_filename(source, reduced_redundancy=self.opt.reduced_redundancy, headers=extra_headers)
+        if self.opt.acl_public:
+          key.set_acl('public-read')
         message('%s => %s', source, target)
         return
 
@@ -1413,6 +1430,18 @@ if __name__ == '__main__':
       '--max-singlepart-upload-size',
       help = 'files with size (in MB) greater than this will be uploaded in '
       'multipart transfers', type = int, default = 4500 * 1024 * 1024)
+  parser.add_option(
+      '--add-header', help = 'Add a given HTTP header to the upload request. Can be '
+      'used multiple times. For instance set \'Expires\' or '
+      '\'Cache-Control\' headers (or both) using this option.',
+      dest = 'add_header', action='append', metavar='NAME:VALUE')
+  parser.add_option(
+      '-P', '--acl-public',
+      help = 'Store objects with ACL allowing read for anyone.',
+      dest = 'acl_public', action = 'store_true', default = False)
+  parser.add_option(
+      '--rr', '--reduced-redundancy', help = 'Store object with \'Reduced redundancy\'. Lower per-GB '
+      'price. [put, cp, mv]', dest = 'reduced_redundancy', action = 'store_true', default = False)
 
   (opt, args) = parser.parse_args()
   s4cmd_logging.configure(opt)
