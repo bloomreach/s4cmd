@@ -1414,8 +1414,8 @@ if __name__ == '__main__':
       help = 'files with size (in MB) greater than this will be uploaded in '
       'multipart transfers', type = int, default = 4500 * 1024 * 1024)
   parser.add_option(
-      '--rr', '--reduced-redundancy', help = 'Store object with \'Reduced redundancy\'. Lower per-GB price. [put, cp, mv]',
-      dest = 'reduced_redundancy', action = 'store_true', default = False)
+      '--rr', '--reduced-redundancy', help = 'Store object with \'Reduced redundancy\'. Lower per-GB '
+      'price. [put, cp, mv]', dest = 'reduced_redundancy', action = 'store_true', default = False)
 
   (opt, args) = parser.parse_args()
   s4cmd_logging.configure(opt)
