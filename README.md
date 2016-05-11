@@ -1,9 +1,26 @@
 # s4cmd
 
+[![Join the chat at https://gitter.im/bloomreach/s4cmd](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/bloomreach/s4cmd?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 ### Super S3 command line tool
 
 Chou-han Yang
-2012-11-09 (covers s4cmd version 1.5.19)
+2016-05-01 (covers s4cmd version 2.0.0)
+
+## What's New in s4cmd 2.0
+
+- Fully migrated from old boto 2.x to new [boto3](http://boto3.readthedocs.io/en/latest/reference/services/s3.html)  library, which provides more reliable and up-to-date S3 backend.
+- Support S3 `--API-ServerSideEncryption` along with **36 new API pass-through options**. See API pass-through options section for complete list.
+- Support batch delete (with delete_objects API) to delete up to 1000 files with single call. **100+ times faster** than sequential deletion.
+- Support `S4CMD_OPTS` environment variable for commonly used options such as --API-ServerSideEncryption aross all your s4cmd operations.
+- Support moving files **larger than 5GB** with multipart upload. **20+ times faster** then sequential move operation when moving large files.
+- Support timestamp filtering with `--last-modified-before` and `--last-modified-after` options for all operations. Human friendly timestamps are supported, e.g. `--last-modified-before='2 months ago'`
+- Faster upload with lazy evaluation of md5 hash.
+- Listing large number of files with S3 pagination, with memory is the limit.
+- New directory to directory `dsync` command is better and standalone implementation to replace old `sync` command, which is implemented based on top of get/put/mv commands. `--delete-removed` work for all cases including local to s3, s3 to local, and a3 to s3. `sync` command preserves the old behavior in this version for compatibility.
+- Tested on both python 2 and 3.
+- Special thanks to [onera.com](http://www.onera.com) for supporting s4cmd.
+
 
 ## Motivation
 
@@ -30,7 +47,7 @@ files in S3: `ls`, `put`, `get`, `cp`, `mv`, `sync`, `del`, `du`.
 The main features that distinguish s4cmd are:
 
 - Simple (less than 1500 lines of code) and implemented in pure Python, based
-  on the widely used [Boto](https://github.com/boto/boto) library.
+  on the widely used [Boto3](https://github.com/boto/boto3) library.
 - Multi-threaded/multi-connection implementation for enhanced performance on all
   commands. As with many network-intensive applications (like web browsers),
   accessing S3 in a single-threaded way is often significantly less efficient than
@@ -82,104 +99,326 @@ from this file will be used.  Otherwise, set the `S3_ACCESS_KEY` and
 `S3_SECRET_KEY` environment variables to contain your S3 credentials.
 
 
-## Common Commands
+## s4cmd Commands
 
-### s4cmd ls [path]
+#### `s4cmd ls [path]`
 
-> List all contents of a directory.
->
-> Available parameters:
->>* -r/--recursive: recursively display all contents including subdirectories under the given path.
->>* -d/--show-directory: show the directory entry instead of its content.
+List all contents of a directory.
 
-### s4cmd put <source> <target>
+* -r/--recursive: recursively display all contents including subdirectories under the given path.
+* -d/--show-directory: show the directory entry instead of its content.
 
-> Upload local files up to S3.
->
-> Available parameters:
->>*   -r/--recursive: also upload directories recursively.
->>*   -s/--sync-check: check md5 hash to avoid uploading the same content.
->>*   -f/--force: override existing file instead of showing error message.
->>*   -n/--dry-run: emulate the operation without real upload.
 
-### s4cmd get <source> <target>
+#### `s4cmd put [source] [target]`
 
-> Download files from S3 to local filesystem.
->
-> Available parameters:
->>*   -r/--recursive: also download directories recursively.
->>*   -s/--sync-check: check md5 hash to avoid downloading the same content.
->>*   -f/--force: override existing file instead of showing error message.
->>*   -n/--dry-run: emulate the operation without real download.
+Upload local files up to S3.
 
-### s4cmd sync <source> <target>
+*   -r/--recursive: also upload directories recursively.
+*   -s/--sync-check: check md5 hash to avoid uploading the same content.
+*   -f/--force: override existing file instead of showing error message.
+*   -n/--dry-run: emulate the operation without real upload.
 
-> Synchronize the contents of two directories. The directory can either be local or remote, but currently, it doesn't support two local directories.
->
-> Available parameters:
->>*   -r/--recursive: also sync directories recursively.
->>*   -s/--sync-check: check md5 hash to avoid syncing the same content.
->>*   -f/--force: override existing file instead of showing error message.
->>*   -n/--dry-run: emulate the operation without real sync.
+#### `s4cmd get [source] [target]`
 
-### s4cmd cp <source> <target>
+Download files from S3 to local filesystem.
 
-> Copy a file or a directory from a S3 location to another.
->
-> Available parameters:
->>*   -r/--recursive: also copy directories recursively.
->>*   -s/--sync-check: check md5 hash to avoid copying the same content.
->>*   -f/--force: override existing file instead of showing error message.
->>*   -n/--dry-run: emulate the operation without real copy.
+*   -r/--recursive: also download directories recursively.
+*   -s/--sync-check: check md5 hash to avoid downloading the same content.
+*   -f/--force: override existing file instead of showing error message.
+*   -n/--dry-run: emulate the operation without real download.
 
-### s4cmd mv <source> <target>
 
-> Move a file or a directory from a S3 location to another.
->
-> Available parameters:
->>*   -r/--recursive: also move directories recursively.
->>*   -s/--sync-check: check md5 hash to avoid moving the same content.
->>*   -f/--force: override existing file instead of showing error message.
->>*   -n/--dry-run: emulate the operation without real move.
+#### `s4cmd dsync [source dir] [target dir]`
 
-### s4cmd del <path>
+Synchronize the contents of two directories. The directory can either be local or remote, but currently, it doesn't support two local directories.
 
-> Delete files or directories on S3.
->
-> Available parameters:
->>*   -r/--recursive: also delete directories recursively.
->>*   -n/--dry-run: emulate the operation without real delete.
+*   -r/--recursive: also sync directories recursively.
+*   -s/--sync-check: check md5 hash to avoid syncing the same content.
+*   -f/--force: override existing file instead of showing error message.
+*   -n/--dry-run: emulate the operation without real sync.
+*   --delete-removed: delete files not in source directory.
 
-### s4cmd du <path>
+#### `s4cmd sync [source] [target]`
 
-> Get the size of the given directory.
->
-> Available parameters:
->>*   -r/--recursive: also add sizes of sub-directories recursively.
+(Obsolete, use `dsync` instead) Synchronize the contents of two directories. The directory can either be local or remote, but currently, it doesn't support two local directories. This command simply invoke get/put/mv commands.
+
+*   -r/--recursive: also sync directories recursively.
+*   -s/--sync-check: check md5 hash to avoid syncing the same content.
+*   -f/--force: override existing file instead of showing error message.
+*   -n/--dry-run: emulate the operation without real sync.
+*   --delete-removed: delete files not in source directory. Only works when syncing local directory to s3 directory.
+
+#### `s4cmd cp [source] [target]`
+
+Copy a file or a directory from a S3 location to another.
+
+*   -r/--recursive: also copy directories recursively.
+*   -s/--sync-check: check md5 hash to avoid copying the same content.
+*   -f/--force: override existing file instead of showing error message.
+*   -n/--dry-run: emulate the operation without real copy.
+
+#### `s4cmd mv [source] [target]`
+
+Move a file or a directory from a S3 location to another.
+
+*   -r/--recursive: also move directories recursively.
+*   -s/--sync-check: check md5 hash to avoid moving the same content.
+*   -f/--force: override existing file instead of showing error message.
+*   -n/--dry-run: emulate the operation without real move.
+
+#### `s4cmd del [path]`
+
+Delete files or directories on S3.
+
+*   -r/--recursive: also delete directories recursively.
+*   -n/--dry-run: emulate the operation without real delete.
+
+#### `s4cmd du [path]`
+
+Get the size of the given directory.
+
+Available parameters:
+
+*   -r/--recursive: also add sizes of sub-directories recursively.
+
+## s4cmd Control Options
+
+##### `-p S3CFG, --config=[filename]`
+path to s3cfg config file
+
+##### `-f, --force`
+force overwrite files when download or upload
+
+##### `-r, --recursive`
+recursively checking subdirectories
+
+##### `-s, --sync-check`
+check file md5 before download or upload
+
+##### `-n, --dry-run`
+trial run without actual download or upload
+
+##### `-t RETRY, --retry=[integer]`
+number of retries before giving up
+
+##### `--retry-delay=[integer]`
+seconds to sleep between retries
+
+##### `-c NUM_THREADS, --num-threads=NUM_THREADS`
+number of concurrent threads
+
+##### `-d, --show-directory`
+show directory instead of its content
+
+##### `--ignore-empty-source`
+ignore empty source from s3
+
+##### `--use-ssl`
+(obsolete) use SSL connection to S3
+
+##### `--verbose`
+verbose output
+
+##### `--debug`
+debug output
+
+##### `--validate`
+(obsolete) validate lookup operation
+
+##### `-D, --delete-removed`
+delete remote files that do not exist in source after sync
+
+##### `--multipart-split-size=[integer]`
+size in bytes to split multipart transfers
+
+##### `--max-singlepart-download-size=[integer]`
+files with size (in bytes) greater than this will be
+downloaded in multipart transfers
+
+##### `--max-singlepart-upload-size=[integer]`
+files with size (in bytes) greater than this will be
+uploaded in multipart transfers
+
+##### `--max-singlepart-copy-size=[integer]`
+files with size (in bytes) greater than this will be
+copied in multipart transfers
+
+##### `--batch-delete-size=[integer]`
+Number of files (&lt;1000) to be combined in batch delete.
+
+##### `--last-modified-before=[datetime]`
+Condition on files where their last modified dates are
+before given parameter.
+
+##### `--last-modified-after=[datetime]`
+Condition on files where their last modified dates are
+after given parameter.
+
+
+## S3 API Pass-through Options
+
+Those options are directly translated to boto3 API commands. The options provided will be filtered by the APIs that are taking parameters. For example, `--API-ServerSideEncryption` is only needed for `put_object`, `create_multipart_upload` but not for `list_buckets` and `get_objects` for exmple. Therefore, providing `--API-ServerSideEncryption` for `s4cmd ls` has no effect.
+
+For more information, please see boto3 s3 documentations http://boto3.readthedocs.io/en/latest/reference/services/s3.html
+
+##### `--API-ACL=[string]`
+The canned ACL to apply to the object.
+
+##### `--API-CacheControl=[string]`
+Specifies caching behavior along the request/reply chain.
+
+##### `--API-ContentDisposition=[string]`
+Specifies presentational information for the object.
+
+##### `--API-ContentEncoding=[string]`
+Specifies what content encodings have been applied to the object and thus what decoding mechanisms must be applied to obtain the media-type referenced by the Content-Type header field.
+
+##### `--API-ContentLanguage=[string]`
+The language the content is in.
+
+##### `--API-ContentMD5=[string]`
+The base64-encoded 128-bit MD5 digest of the part data.
+
+##### `--API-ContentType=[string]`
+A standard MIME type describing the format of the object data.
+
+##### `--API-CopySourceIfMatch=[string]`
+Copies the object if its entity tag (ETag) matches the specified tag.
+
+##### `--API-CopySourceIfModifiedSince=[datetime]`
+Copies the object if it has been modified since the specified time.
+
+##### `--API-CopySourceIfNoneMatch=[string]`
+Copies the object if its entity tag (ETag) is different than the specified ETag.
+
+##### `--API-CopySourceIfUnmodifiedSince=[datetime]`
+Copies the object if it hasn't been modified since the specified time.
+
+##### `--API-CopySourceRange=[string]`
+The range of bytes to copy from the source object. The range value must use the form bytes=first-last, where the first and last are the zero-based byte offsets to copy. For example, bytes=0-9 indicates that you want to copy the first ten bytes of the source. You can copy a range only if the source object is greater than 5 GB.
+
+##### `--API-CopySourceSSECustomerAlgorithm=[string]`
+Specifies the algorithm to use when decrypting the source object (e.g., AES256).
+
+##### `--API-CopySourceSSECustomerKeyMD5=[string]`
+Specifies the 128-bit MD5 digest of the encryption key according to RFC 1321. Amazon S3 uses this header for a message integrity check to ensure the encryption key was transmitted without error. Please note that this parameter is automatically populated if it is not provided. Including this parameter is not required
+
+##### `--API-CopySourceSSECustomerKey=[string]`
+Specifies the customer-provided encryption key for Amazon S3 to use to decrypt the source object. The encryption key provided in this header must be one that was used when the source object was created.
+
+##### `--API-ETag=[string]`
+Entity tag returned when the part was uploaded.
+
+##### `--API-Expires=[datetime]`
+The date and time at which the object is no longer cacheable.
+
+##### `--API-GrantFullControl=[string]`
+Gives the grantee READ, READ_ACP, and WRITE_ACP permissions on the object.
+
+##### `--API-GrantReadACP=[string]`
+Allows grantee to read the object ACL.
+
+##### `--API-GrantRead=[string]`
+Allows grantee to read the object data and its metadata.
+
+##### `--API-GrantWriteACP=[string]`
+Allows grantee to write the ACL for the applicable object.
+
+##### `--API-IfMatch=[string]`
+Return the object only if its entity tag (ETag) is the same as the one specified, otherwise return a 412 (precondition failed).
+
+##### `--API-IfModifiedSince=[datetime]`
+Return the object only if it has been modified since the specified time, otherwise return a 304 (not modified).
+
+##### `--API-IfNoneMatch=[string]`
+Return the object only if its entity tag (ETag) is different from the one specified, otherwise return a 304 (not modified).
+
+##### `--API-IfUnmodifiedSince=[datetime]`
+Return the object only if it has not been modified since the specified time, otherwise return a 412 (precondition failed).
+
+##### `--API-Metadata=[dict]`
+A map (in json string) of metadata to store with the object in S3
+
+##### `--API-MetadataDirective=[string]`
+Specifies whether the metadata is copied from the source object or replaced with metadata provided in the request.
+
+##### `--API-MFA=[string]`
+The concatenation of the authentication device's serial number, a space, and the value that is displayed on your authentication device.
+
+##### `--API-RequestPayer=[string]`
+Confirms that the requester knows that she or he will be charged for the request. Bucket owners need not specify this parameter in their requests. Documentation on downloading objects from requester pays buckets can be found at http://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html
+
+##### `--API-ServerSideEncryption=[string]`
+The Server-side encryption algorithm used when storing this object in S3 (e.g., AES256, aws:kms).
+
+##### `--API-SSECustomerAlgorithm=[string]`
+Specifies the algorithm to use to when encrypting the object (e.g., AES256).
+
+##### `--API-SSECustomerKeyMD5=[string]`
+Specifies the 128-bit MD5 digest of the encryption key according to RFC 1321. Amazon S3 uses this header for a message integrity check to ensure the encryption key was transmitted without error. Please note that this parameter is automatically populated if it is not provided. Including this parameter is not required
+
+##### `--API-SSECustomerKey=[string]`
+Specifies the customer-provided encryption key for Amazon S3 to use in encrypting data. This value is used to store the object and then it is discarded; Amazon does not store the encryption key. The key must be appropriate for use with the algorithm specified in the x-amz-server-side-encryption-customer-algorithm header.
+
+##### `--API-SSEKMSKeyId=[string]`
+Specifies the AWS KMS key ID to use for object encryption. All GET and PUT requests for an object protected by AWS KMS will fail if not made via SSL or using SigV4. Documentation on configuring any of the officially supported AWS SDKs and CLI can be found at http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingAWSSDK.html#specify-signature-version
+
+##### `--API-StorageClass=[string]`
+The type of storage to use for the object. Defaults to 'STANDARD'.
+
+##### `--API-VersionId=[string]`
+VersionId used to reference a specific version of the object.
+
+##### `--API-WebsiteRedirectLocation=[string]`
+If the bucket is configured as a website, redirects requests for this object to another object in the same bucket or to an external URL. Amazon S3 stores the value of this header in the object metadata.
+
+
+## Debugging Tips
+
+Simply enable `--debug` option to see the full log of s4cmd. If you even need to check what APIs are invoked from s4cmd to boto3, you can run:
+
+```
+s4cmd --debug [op] .... 2>&1 >/dev/null | grep S3APICALL
+```
+
+To see all the parameters sending to S3 API.
 
 
 ## Compatibility between s3cmd and s4cmd
 
 Prefix matching: In s3cmd, unlike traditional filesystems, prefix names match listings:
->>s3cmd ls s3://my-bucket/ch
->s3://my-bucket/charlie/
->s3://my-bucket/chyang/
+
+```
+>> s3cmd ls s3://my-bucket/ch
+s3://my-bucket/charlie/
+s3://my-bucket/chyang/
+```
 
 In s4cmd, behavior is the same as with a Unix shell:
 
+```
 >>s4cmd ls s3://my-bucket/ch
 >(empty)
+```
 
 To get prefix behavior, use explicit wildcards instead: s4cmd ls s3://my-bucket/ch*
 
 Similarly, sync and cp commands emulate the Unix cp command, so directory to
 directory sync use different syntax:
 
-- s3cmd sync s3://bucket/path/dirA s3://bucket/path/dirB/ will copy contents in dirA to dirB.
-- s4cmd sync s3://bucket/path/dirA s3://bucket/path/dirB/ will copy dirA *into* dirB.
+```
+>> s3cmd sync s3://bucket/path/dirA s3://bucket/path/dirB/
+```
+will copy contents in dirA to dirB.
+```
+>> s4cmd sync s3://bucket/path/dirA s3://bucket/path/dirB/
+```
+will copy dirA *into* dirB.
 
 To achieve the s3cmd behavior, use wildcards:
+```
 s4cmd sync s3://bucket/path/dirA/* s3://bucket/path/dirB/
+```
 
 Note s4cmd doesn't support dirA without trailing slash indicating dirA/* as
 what rsync supported.
@@ -211,6 +450,13 @@ still have to download and verify the MD5 directly.
 
 ## Unimplemented features
 
-- Deletion with sync command.
 - CloudFront or other feature support beyond basic S3 access.
-- Command-line auto-complete.
+
+## Credits
+
+* Bloomreach http://www.bloomreach.com
+* Onera http://www.onera.com
+
+
+
+

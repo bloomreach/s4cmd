@@ -21,31 +21,37 @@
 Super S3 command line tool.
 """
 
-import sys, os, re, optparse, multiprocessing, cStringIO, fnmatch, time, hashlib, errno
-import logging, traceback, Queue, types, threading, random, ConfigParser, socket
+import sys, os, re, optparse, multiprocessing, fnmatch, time, hashlib, errno, pytz
+import logging, traceback, types, threading, random, socket, shlex, datetime, json
 
-# We need boto 2.3.0 for multipart upload1
-import boto
-import boto.s3
-import boto.s3.key
-import boto.exception
+IS_PYTHON2 = sys.version_info[0] == 2
+
+if IS_PYTHON2:
+  from cStringIO import StringIO
+  import Queue
+  import ConfigParser
+else:
+  from io import BytesIO as StringIO
+  import queue as Queue
+  import configparser  as ConfigParser
+
+  def cmp(a, b):
+    return (a > b) - (a < b)
+
+from functools import cmp_to_key
+
 
 ##
 ## Global constants
 ##
 
-S4CMD_VERSION = "1.5.20"
+S4CMD_VERSION = "2.0.0"
 
-SINGLEPART_UPLOAD_MAX = 4500 # Max file size (in MB) to upload without S3 multipart upload
-SINGLEPART_DOWNLOAD_MAX = 50 # Max file size (in MB) to download with single thread
-DEFAULT_SPLIT = 50 # in MB
-DEFAULT_RETRY = 3
-RETRY_DELAY = 10
 PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
-TIMESTAMP_REGEX = re.compile(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}).(\d{3})Z')
-TIMESTAMP_FORMAT = '%4s-%2s-%2s %2s:%2s'
+TIMESTAMP_FORMAT = '%04d-%02d-%02d %02d:%02d'
 SOCKET_TIMEOUT = 5 * 60 # in sec(s) (timeout if we don't receive any recv() callback)
+socket.setdefaulttimeout(SOCKET_TIMEOUT)
 
 # Global list for temp files.
 TEMP_FILES = set()
@@ -53,6 +59,7 @@ TEMP_FILES = set()
 # Environment variable names for S3 credentials.
 S3_ACCESS_KEY_NAME = "S3_ACCESS_KEY"
 S3_SECRET_KEY_NAME = "S3_SECRET_KEY"
+S4CMD_ENV_KEY = "S4CMD_OPTS"
 
 
 ##
@@ -60,38 +67,13 @@ S3_SECRET_KEY_NAME = "S3_SECRET_KEY"
 ##
 
 class Options:
-  '''Default wrapper for running options
-     This class contains most running options with default values. They can
-     be overwritten by command line options.
+  '''Default option class for available options. Use the default value from opt parser.
+     The values can be overwritten by command line options or set at run-time.
   '''
-  def __init__(self, opt = None):
-    if opt == None: opt = False # Set opt to False as the default value for other options.
-    self.s3cfg = opt.s3cfg if opt else None
-    self.recursive = (opt and opt.recursive != None)
-    self.force = (opt and opt.force != None)
-    self.sync_check = (opt and opt.sync_check != None)
-    self.dry_run = (opt and opt.dry_run != None)
-    self.verbose = (opt and opt.verbose != None)
-    self.debug = (opt and opt.debug != None)
-    self.validate = (opt and opt.validate != None)
-    self.use_ssl = (opt and opt.use_ssl != None)
-    self.show_dir = (opt and opt.show_dir != None)
-    self.delete_removed = (opt and opt.delete_removed != None)
-    self.ignore_empty_source = (opt and opt.ignore_empty_source)
-    self.retry = opt.retry if opt else DEFAULT_RETRY
-    self.multipart_split_size = opt.multipart_split_size if opt else DEFAULT_SPLIT
-    self.max_singlepart_download_size = opt.max_singlepart_download_size if opt else SINGLEPART_DOWNLOAD_MAX
-    self.max_singlepart_upload_size = opt.max_singlepart_upload_size if opt else SINGLEPART_UPLOAD_MAX
-
-    # Convert multipart sizes to bytes
-    self.multipart_split_size = self.multipart_split_size * 1024 * 1024
-    self.max_singlepart_download_size = self.max_singlepart_download_size * 1024 * 1024
-    self.max_singlepart_upload_size = self.max_singlepart_upload_size * 1024 * 1024
-
-    if opt and opt.num_threads:
-      self.num_threads = opt.num_threads
-    else:
-      self.num_threads = int(os.getenv('S4CMD_NUM_THREADS', multiprocessing.cpu_count() * 4))
+  def __init__(self, opt=None):
+    parser = get_opt_parser()
+    for o in parser.option_list:
+      self.__dict__[o.dest] = o.default if (opt is None) or (opt.__dict__[o.dest] is None) else opt.__dict__[o.dest]
 
 class Failure(RuntimeError):
   '''Exception for runtime failures'''
@@ -105,50 +87,52 @@ class RetryFailure(Exception):
   '''Runtime failure that can be retried'''
   pass
 
-def initialize(opt = None):
-  '''Initialization of this tool. Setup loggers.'''
 
-  # Set low-level socket timeout to prevent read blocking.
-  socket.setdefaulttimeout(SOCKET_TIMEOUT)
+class S4cmdLoggingClass:
+  def __init__(self):
+    self.log = logging.Logger("s4cmd")
+    self.log.stream = sys.stderr
+    self.log_handler = logging.StreamHandler(self.log.stream)
+    self.log.addHandler(self.log_handler)
 
-  if not opt:
-    opt = Options()
 
-  global log
-  log = logging.Logger("s4cmd")
+  def configure(self, opt):
+    'Configure the logger based on command-line arguments'''
 
-  if opt.debug:
-    verbosity = 3
-  elif opt.verbose:
-    verbosity = 2
-  else:
-    verbosity = 1
+    self.log_handler.setFormatter(logging.Formatter('%(message)s', DATETIME_FORMAT))
+    if opt.debug:
+      self.log.verbosity = 3
+      self.log_handler.setFormatter(logging.Formatter(
+          '  (%(levelname).1s)%(filename)s:%(lineno)-4d %(message)s',
+          DATETIME_FORMAT))
+      self.log.setLevel(logging.DEBUG)
+    elif opt.verbose:
+      self.log.verbosity = 2
+      self.log.setLevel(logging.INFO)
+    else:
+      self.log.verbosity = 1
+      self.log.setLevel(logging.ERROR)
 
-  log.verbosity = verbosity
-  log.stream = sys.stderr
 
-  log_handler = logging.StreamHandler(log.stream)
-  log.addHandler(log_handler)
+  def get_loggers(self):
+    '''Return a list of the logger methods: (debug, info, warn, error)'''
 
-  if verbosity == 3:
-    log_handler.setFormatter(logging.Formatter('  (%(levelname).1s)%(filename)s:%(lineno)-4d %(message)s', DATETIME_FORMAT))
-    log.setLevel(logging.DEBUG)
-  elif verbosity == 2:
-    log_handler.setFormatter(logging.Formatter('%(message)s', DATETIME_FORMAT))
-    log.setLevel(logging.INFO)
-  else:
-    log_handler.setFormatter(logging.Formatter('%(message)s', DATETIME_FORMAT))
-    log.setLevel(logging.ERROR)
+    return self.log.debug, self.log.info, self.log.warn, self.log.error
 
-# Call initalize() by default.
-initialize()
+s4cmd_logging = S4cmdLoggingClass()
+debug, info, warn, error = s4cmd_logging.get_loggers()
+
+
+def get_default_thread_count():
+  return int(os.getenv('S4CMD_NUM_THREADS', multiprocessing.cpu_count() * 4))
+
 
 def log_calls(func):
   '''Decorator to log function calls.'''
-  def wrapper(*args, **kwargs):
-    callStr = "%s(%s)" % (func.__name__, ", ".join([repr(p) for p in args] + ["%s=%s" % (k, repr(v)) for (k, v) in kwargs.items()]))
+  def wrapper(*args, **kargs):
+    callStr = "%s(%s)" % (func.__name__, ", ".join([repr(p) for p in args] + ["%s=%s" % (k, repr(v)) for (k, v) in list(kargs.items())]))
     debug(">> %s", callStr)
-    ret = func(*args, **kwargs)
+    ret = func(*args, **kargs)
     debug("<< %s: %s", callStr, repr(ret))
     return ret
   return wrapper
@@ -165,22 +149,6 @@ def synchronized(func):
       return func(*args, **kargs)
   return synced_func
 
-def debug(msg, *args):
-  '''Debug output wrapper.'''
-  log.debug(msg, *args)
-
-def info(msg, *args):
-  '''Program verbose information output.'''
-  log.info(msg, *args)
-
-def warn(msg, *args):
-  '''Program warnings.'''
-  log.warn(msg, *args)
-
-def error(msg, *args):
-  '''Program error output.'''
-  log.error(msg, *args)
-
 def clear_progress():
   '''Clear previous progress message, if any.'''
   progress('')
@@ -192,7 +160,7 @@ def progress(msg, *args):
      it will clear the previous message before showing next one.
   '''
   # Don't show any progress if the output is directed to a file.
-  if not sys.stderr.isatty():
+  if not (sys.stdout.isatty() and sys.stderr.isatty()):
     return
 
   text = (msg % args)
@@ -210,7 +178,7 @@ def message(msg, *args):
   text = (msg % args)
   sys.stdout.write(text + '\n')
 
-def fail(message, exc_info = None, status = 1, stacktrace = False):
+def fail(message, exc_info=None, status=1, stacktrace=False):
   '''Utility function to handle runtime failures gracefully.
      Show concise information if possible, then terminate program.
   '''
@@ -290,6 +258,198 @@ class S3URL:
     '''Check if given uri is a valid S3 URL'''
     return S3URL.S3URL_PATTERN.match(uri) != None
 
+class BotoClient(object):
+  '''This is a bridge between s4cmd and boto3 library. All S3 method callsed should go thought this class.
+     The white list ALLOWED_CLIENT_METHODS lists those methods that are allowed to use. Also, EXTRA_CLIENT_PARAMS
+     is the list of S3 parameters that we can take from command-line argument and pass through to the API.
+  '''
+
+  # Encapsulate boto3 interface intercept all API calls.
+  boto3 = __import__('boto3') # version >= 1.3.1
+  botocore = __import__('botocore')
+
+  # Exported exceptions.
+  BotoError = boto3.exceptions.Boto3Error
+  ClientError = botocore.exceptions.ClientError
+
+  # Exceptions that retries may work. May change in the future.
+  S3RetryableErrors = (
+    socket.timeout,
+    socket.error if IS_PYTHON2 else ConnectionError,
+    botocore.vendored.requests.packages.urllib3.exceptions.ReadTimeoutError,
+    botocore.exceptions.IncompleteReadError
+  )
+
+  # List of API functions we use in s4cmd.
+  ALLOWED_CLIENT_METHODS = [
+    'list_buckets',
+    'get_paginator',
+    'head_object',
+    'put_object',
+    'create_multipart_upload',
+    'upload_part',
+    'complete_multipart_upload',
+    'abort_multipart_upload',
+    'get_object',
+    'copy_object',
+    'delete_object',
+    'delete_objects',
+    'upload_part_copy'
+  ]
+
+  # List of parameters grabbed from http://boto3.readthedocs.io/en/latest/reference/services/s3.html
+  # Pass those parameters directly to boto3 low level API. Most of the parameters are not tested.
+  EXTRA_CLIENT_PARAMS = [
+      ("ACL", "string",
+       "The canned ACL to apply to the object."),
+      ("CacheControl", "string",
+       "Specifies caching behavior along the request/reply chain."),
+      ("ContentDisposition", "string",
+       "Specifies presentational information for the object."),
+      ("ContentEncoding", "string",
+       "Specifies what content encodings have been applied to the object and thus what decoding mechanisms must be applied to obtain the media-type referenced by the Content-Type header field."),
+      ("ContentLanguage", "string",
+       "The language the content is in."),
+      ("ContentMD5", "string",
+       "The base64-encoded 128-bit MD5 digest of the part data."),
+      ("ContentType", "string",
+       "A standard MIME type describing the format of the object data."),
+      ("CopySourceIfMatch", "string",
+       "Copies the object if its entity tag (ETag) matches the specified tag."),
+      ("CopySourceIfModifiedSince", "datetime",
+       "Copies the object if it has been modified since the specified time."),
+      ("CopySourceIfNoneMatch", "string",
+       "Copies the object if its entity tag (ETag) is different than the specified ETag."),
+      ("CopySourceIfUnmodifiedSince", "datetime",
+       "Copies the object if it hasn't been modified since the specified time."),
+      ("CopySourceRange", "string",
+       "The range of bytes to copy from the source object. The range value must use the form bytes=first-last, where the first and last are the zero-based byte offsets to copy. For example, bytes=0-9 indicates that you want to copy the first ten bytes of the source. You can copy a range only if the source object is greater than 5 GB."),
+      ("CopySourceSSECustomerAlgorithm", "string",
+       "Specifies the algorithm to use when decrypting the source object (e.g., AES256)."),
+      ("CopySourceSSECustomerKeyMD5", "string",
+       "Specifies the 128-bit MD5 digest of the encryption key according to RFC 1321. Amazon S3 uses this header for a message integrity check to ensure the encryption key was transmitted without error. Please note that this parameter is automatically populated if it is not provided. Including this parameter is not required"),
+      ("CopySourceSSECustomerKey", "string",
+       "Specifies the customer-provided encryption key for Amazon S3 to use to decrypt the source object. The encryption key provided in this header must be one that was used when the source object was created."),
+      ("ETag", "string",
+       "Entity tag returned when the part was uploaded."),
+      ("Expires", "datetime",
+       "The date and time at which the object is no longer cacheable."),
+      ("GrantFullControl", "string",
+       "Gives the grantee READ, READ_ACP, and WRITE_ACP permissions on the object."),
+      ("GrantReadACP", "string",
+       "Allows grantee to read the object ACL."),
+      ("GrantRead", "string",
+       "Allows grantee to read the object data and its metadata."),
+      ("GrantWriteACP", "string",
+       "Allows grantee to write the ACL for the applicable object."),
+      ("IfMatch", "string",
+       "Return the object only if its entity tag (ETag) is the same as the one specified, otherwise return a 412 (precondition failed)."),
+      ("IfModifiedSince", "datetime",
+       "Return the object only if it has been modified since the specified time, otherwise return a 304 (not modified)."),
+      ("IfNoneMatch", "string",
+       "Return the object only if its entity tag (ETag) is different from the one specified, otherwise return a 304 (not modified)."),
+      ("IfUnmodifiedSince", "datetime",
+       "Return the object only if it has not been modified since the specified time, otherwise return a 412 (precondition failed)."),
+      ("Metadata", "dict",
+       "A map (in json string) of metadata to store with the object in S3"),
+      ("MetadataDirective", "string",
+       "Specifies whether the metadata is copied from the source object or replaced with metadata provided in the request."),
+      ("MFA", "string",
+       "The concatenation of the authentication device's serial number, a space, and the value that is displayed on your authentication device."),
+      ("RequestPayer", "string",
+       "Confirms that the requester knows that she or he will be charged for the request. Bucket owners need not specify this parameter in their requests. Documentation on downloading objects from requester pays buckets can be found at http://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html"),
+      ("ServerSideEncryption", "string",
+       "The Server-side encryption algorithm used when storing this object in S3 (e.g., AES256, aws:kms)."),
+      ("SSECustomerAlgorithm", "string",
+       "Specifies the algorithm to use to when encrypting the object (e.g., AES256)."),
+      ("SSECustomerKeyMD5", "string",
+       "Specifies the 128-bit MD5 digest of the encryption key according to RFC 1321. Amazon S3 uses this header for a message integrity check to ensure the encryption key was transmitted without error. Please note that this parameter is automatically populated if it is not provided. Including this parameter is not required"),
+      ("SSECustomerKey", "string",
+       "Specifies the customer-provided encryption key for Amazon S3 to use in encrypting data. This value is used to store the object and then it is discarded; Amazon does not store the encryption key. The key must be appropriate for use with the algorithm specified in the x-amz-server-side-encryption-customer-algorithm header."),
+      ("SSEKMSKeyId", "string",
+       "Specifies the AWS KMS key ID to use for object encryption. All GET and PUT requests for an object protected by AWS KMS will fail if not made via SSL or using SigV4. Documentation on configuring any of the officially supported AWS SDKs and CLI can be found at http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingAWSSDK.html#specify-signature-version"),
+      ("StorageClass", "string",
+       "The type of storage to use for the object. Defaults to 'STANDARD'."),
+      ("VersionId", "string",
+       "VersionId used to reference a specific version of the object."),
+      ("WebsiteRedirectLocation", "string",
+       "If the bucket is configured as a website, redirects requests for this object to another object in the same bucket or to an external URL. Amazon S3 stores the value of this header in the object metadata."),
+  ]
+
+  def __init__(self, opt, aws_access_key_id=None, aws_secret_access_key=None):
+    '''Initialize boto3 API bridge class. Calculate and cache all legal parameters
+       for each method we are going to call.
+    '''
+    self.opt = opt
+    if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
+      self.client = self.boto3.client('s3',
+                                      aws_access_key_id=aws_access_key_id,
+                                      aws_secret_access_key=aws_secret_access_key)
+    else:
+      self.client = self.boto3.client('s3')
+
+    # Cache the result so we don't have to recalculate.
+    self.legal_params = {}
+    for method in BotoClient.ALLOWED_CLIENT_METHODS:
+      self.legal_params[method] = self.get_legal_params(method)
+
+  def __getattribute__(self, method):
+    '''Intercept boto3 API call to inject our extra options.'''
+
+    if method in BotoClient.ALLOWED_CLIENT_METHODS:
+
+      def wrapped_method(*args, **kargs):
+        merged_kargs = self.merge_opt_params(method, kargs)
+        callStr = "%s(%s)" % ("S3APICALL " + method, ", ".join([repr(p) for p in args] + ["%s=%s" % (k, repr(v)) for (k, v) in list(kargs.items())]))
+        debug(">> %s", callStr)
+        ret = getattr(self.client, method)(*args, **merged_kargs)
+        debug("<< %s: %s", callStr, repr(ret))
+        return ret
+
+      return wrapped_method
+
+    return super(BotoClient, self).__getattribute__(method)
+
+  def get_legal_params(self, method):
+    '''Given a API name, list all legal parameters using boto3 service model.'''
+    if method not in self.client.meta.method_to_api_mapping:
+      # Injected methods. Ignore.
+      return []
+    api = self.client.meta.method_to_api_mapping[method]
+    shape = self.client.meta.service_model.operation_model(api).input_shape
+    if shape is None:
+      # No params needed for this API.
+      return []
+    return shape.members.keys()
+
+  def merge_opt_params(self, method, kargs):
+    '''Combine existing parameters with extra options supplied from command line
+       options. Carefully merge special type of parameter if needed.
+    '''
+    for key in self.legal_params[method]:
+      if not hasattr(self.opt, key) or getattr(self.opt, key) is None:
+        continue
+      if key in kargs and type(kargs[key]) == dict:
+        assert(type(getattr(self.opt, key)) == dict)
+        # Merge two dictionaries.
+        for k, v in getattr(self.opt, key).iteritems():
+          kargs[key][k] = v
+      else:
+        # Overwrite values.
+        kargs[key] = getattr(self.opt, key)
+
+    return kargs
+
+  @staticmethod
+  def add_options(parser):
+    '''Add the who list of API parameters into optparse.'''
+    for param, param_type, param_doc in BotoClient.EXTRA_CLIENT_PARAMS:
+      parser.add_option('--API-' + param, help=param_doc, type=param_type, dest=param)
+
+  def close(self):
+    '''Close this client.'''
+    self.client = None
+
 class TaskQueue(Queue.Queue):
   '''Wrapper class to Queue.
      Since we need to ensure that main thread is not blocked by child threads
@@ -309,13 +469,13 @@ class TaskQueue(Queue.Queue):
 
         # Child thread has exceptions, fail main thread too.
         if self.exc_info:
-          fail('[Thread Failure] ', exc_info = self.exc_info)
+          fail('[Thread Failure] ', exc_info=self.exc_info)
     except KeyboardInterrupt:
       raise Failure('Interrupted by user')
     finally:
       self.all_tasks_done.release()
 
-  def terminate(self, exc_info = None):
+  def terminate(self, exc_info=None):
     '''Terminate all threads by deleting the queue and forcing the child threads
        to quit.
     '''
@@ -361,31 +521,28 @@ class ThreadPool(object):
         try:
           func_name, retry, args, kargs = item
           self.__class__.__dict__[func_name](self, *args, **kargs)
-        except InvalidArgument, e:
+        except InvalidArgument as e:
           self.pool.tasks.terminate(e)
-          fail('[Invalid Argument] ', exc_info = e)
-        except Failure, e:
+          fail('[Invalid Argument] ', exc_info=e)
+        except Failure as e:
           self.pool.tasks.terminate(e)
-          fail('[Runtime Failure] ', exc_info = e)
-        # Also retry known S3ResponseError since S3 has transient
-        # errors from time to time.
-        # except boto.exception.S3ResponseError, e:
-        #   self.pool.tasks.terminate(e)
-        #   fail('[S3ResponseError] %s: %s' % (e.error_code, e.error_message))
-        except OSError, e:
+          fail('[Runtime Failure] ', exc_info=e)
+        except OSError as e:
           self.pool.tasks.terminate(e)
           fail('[OSError] %d: %s' % (e.errno, e.strerror))
-        except Exception, e:
-          # XXX Should we retry on all unknown exceptions?
+        except BotoClient.S3RetryableErrors as e:
           if retry >= self.opt.retry:
             self.pool.tasks.terminate(e)
-            fail('[Runtime Exception] ', exc_info = e, stacktrace = True)
+            fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
           else:
             # Show content of exceptions.
             error(e)
 
-          time.sleep(RETRY_DELAY)
+          time.sleep(self.opt.retry_delay)
           self.pool.tasks.put((func_name, retry + 1, args, kargs))
+        except Exception as e:
+          self.pool.tasks.terminate(e)
+          fail('[Exception] ', exc_info=e)
         finally:
           self.pool.processed()
           self.pool.tasks.task_done()
@@ -420,7 +577,7 @@ class ThreadPool(object):
     '''
     try:
       attr = super(ThreadPool, self).__getattribute__(name)
-    except AttributeError, e:
+    except AttributeError as e:
       if name in self.thread_class.__dict__:
         # Here we masquerade the original function with add_task(). So the
         # function call will be put into task queue.
@@ -473,7 +630,7 @@ class S3Handler(object):
     env = os.environ
     if S3_ACCESS_KEY_NAME in env and S3_SECRET_KEY_NAME in env:
       keys = (env[S3_ACCESS_KEY_NAME], env[S3_SECRET_KEY_NAME])
-      log.debug("read S3 keys from environment")
+      debug("read S3 keys from environment")
       return keys
     else:
       return None
@@ -491,62 +648,52 @@ class S3Handler(object):
       config = ConfigParser.ConfigParser()
       config.read(s3cfg_path)
       keys = config.get("default", "access_key"), config.get("default", "secret_key")
-      log.debug("read S3 keys from $HOME/.s3cfg file")
+      debug("read S3 keys from $HOME/.s3cfg file")
       return keys
-    except Exception, e:
-      log.info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
+    except Exception as e:
+      info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
       return None
 
   @staticmethod
-  def init_s3_keys(opt=None):
-    '''Initialize s3 access keys from environment varialbe or s3cfg config file.'''
-    if opt is None:
-      opt = Options()
+  def init_s3_keys(opt):
+    '''Initialize s3 access keys from environment variable or s3cfg config file.'''
     S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg(opt)
 
-  def __init__(self, opt=None):
+  def __init__(self, opt):
     '''Constructor, connect to S3 store'''
-    if opt is None:
-      opt = Options()
     self.s3 = None
     self.opt = opt
     self.connect()
 
   def __del__(self):
     '''Destructor, stop s3 connection'''
-    if self.s3 is not None:
-      self.s3.close()
-      self.s3 = None
+    self.s3 = None
 
   def connect(self):
     '''Connect to S3 storage'''
     try:
       if S3Handler.S3_KEYS:
-        self.s3 = boto.connect_s3(S3Handler.S3_KEYS[0],
-                                  S3Handler.S3_KEYS[1],
-                                  is_secure = self.opt.use_ssl,
-                                  suppress_consec_slashes = False)
+        self.s3 = BotoClient(self.opt, S3Handler.S3_KEYS[0], S3Handler.S3_KEYS[1])
       else:
-        self.s3 = boto.connect_s3(is_secure = self.opt.use_ssl,
-                                  suppress_consec_slashes = False)
-    except Exception, e:
+        self.s3 = BotoClient(self.opt)
+    except Exception as e:
       raise RetryFailure('Unable to connect to s3: %s' % e)
 
   @log_calls
   def list_buckets(self):
     '''List all buckets'''
     result = []
-    for bucket in self.s3.get_all_buckets():
+    for bucket in self.s3.list_buckets().get('Buckets') or []:
       result.append({
-          'name': S3URL.combine('s3', bucket.name, ''),
+          'name': S3URL.combine('s3', bucket['Name'], ''),
           'is_dir': True,
           'size': 0,
-          'last_modified': bucket.creation_date
+          'last_modified': bucket['CreationDate']
         })
     return result
 
   @log_calls
-  def s3walk(self, basedir, show_dir = None):
+  def s3walk(self, basedir, show_dir=None):
     '''Walk through a S3 directory. This function initiate a walk with a basedir.
        It also supports multiple wildcards.
     '''
@@ -583,8 +730,7 @@ class S3Handler(object):
       if result != 0:
         return result
       return cmp(x['name'], y['name'])
-
-    return sorted(result, compare)
+    return sorted(result, key=cmp_to_key(compare))
 
   @log_calls
   def local_walk(self, basedir):
@@ -612,7 +758,7 @@ class S3Handler(object):
     '''
     result = []
 
-    if not isinstance(source, types.ListType):
+    if not isinstance(source, list):
       source = [source]
 
     for src in source:
@@ -634,15 +780,15 @@ class S3Handler(object):
     '''Upload a single file or a directory by adding a task into queue'''
     if os.path.isdir(source):
       if self.opt.recursive:
-        for f in filter(lambda f: not os.path.isdir(f), self.local_walk(source)):
+        for f in (f for f in self.local_walk(source) if not os.path.isdir(f)):
           target_url = S3URL(target)
           # deal with ./ or ../ here by normalizing the path.
           joined_path = os.path.normpath(os.path.join(target_url.path, os.path.relpath(f, source)))
-          pool.upload(None, f, S3URL.combine('s3', target_url.bucket, joined_path))
+          pool.upload(f, S3URL.combine('s3', target_url.bucket, joined_path))
       else:
         message('omitting directory "%s".' % source)
     else:
-      pool.upload(None, source, target)
+      pool.upload(source, target)
 
   @log_calls
   def put_files(self, source, target):
@@ -652,7 +798,7 @@ class S3Handler(object):
        directory structure under the given source directory.
     '''
     pool = ThreadPool(ThreadUtil, self.opt)
-    if not isinstance(source, types.ListType):
+    if not isinstance(source, list):
       source = [source]
 
     if target[-1] == PATH_SEP:
@@ -667,13 +813,10 @@ class S3Handler(object):
     pool.join()
 
   @log_calls
-  def update_privilege(self, source, target):
+  def update_privilege(self, obj, target):
     '''Get privileges from metadata of the source in s3, and apply them to target'''
-    s3url = S3URL(source)
-    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
-    remoteKey = bucket.get_key(s3url.path)
-    if 'privilege' in remoteKey.metadata:
-      os.chmod(target, int(remoteKey.metadata['privilege'], 8))
+    if 'privilege' in obj['Metadata']:
+      os.chmod(target, int(obj['Metadata']['privilege'], 8))
 
   @log_calls
   def get_single_file(self, pool, source, target):
@@ -681,12 +824,12 @@ class S3Handler(object):
     if source[-1] == PATH_SEP:
       if self.opt.recursive:
         basepath = S3URL(source).path
-        for f in filter(lambda f: not f['is_dir'], self.s3walk(source)):
-          pool.download(None, f['name'], os.path.join(target, os.path.relpath(S3URL(f['name']).path, basepath)))
+        for f in (f for f in self.s3walk(source) if not f['is_dir']):
+          pool.download(f['name'], os.path.join(target, os.path.relpath(S3URL(f['name']).path, basepath)))
       else:
         message('omitting directory "%s".' % source)
     else:
-      pool.download(None, source, target)
+      pool.download(source, target)
 
   @log_calls
   def get_files(self, source, target):
@@ -716,12 +859,13 @@ class S3Handler(object):
   @log_calls
   def delete_removed_files(self, source, target):
     '''Remove remote files that are not present in the local source.
+       (Obsolete) It is used for old sync command now.
     '''
     message("Deleting files found in %s and not in %s", source, target)
     if os.path.isdir(source):
       unecessary = []
       basepath = S3URL(target).path
-      for f in filter(lambda f: not f['is_dir'], self.s3walk(target)):
+      for f in [f for f in self.s3walk(target) if not f['is_dir']]:
         local_name = os.path.join(source, os.path.relpath(S3URL(f['name']).path, basepath))
         if not os.path.isfile(local_name):
           message("%s not found locally, adding to delete queue", local_name)
@@ -734,22 +878,21 @@ class S3Handler(object):
     else:
       raise Failure('Source "%s" is not a directory.' % target)
 
-
   @log_calls
   def cp_single_file(self, pool, source, target, delete_source):
     '''Copy a single file or a directory by adding a task into queue'''
     if source[-1] == PATH_SEP:
       if self.opt.recursive:
         basepath = S3URL(source).path
-        for f in filter(lambda f: not f['is_dir'], self.s3walk(source)):
-          pool.copy(f['name'], os.path.join(target, os.path.relpath(S3URL(f['name']).path, basepath)), delete_source)
+        for f in (f for f in self.s3walk(source) if not f['is_dir']):
+          pool.copy(f['name'], os.path.join(target, os.path.relpath(S3URL(f['name']).path, basepath)), delete_source=delete_source)
       else:
         message('omitting directory "%s".' % source)
     else:
-      pool.copy(source, target, delete_source)
+      pool.copy(source, target, delete_source=delete_source)
 
   @log_calls
-  def cp_files(self, source, target, delete_source = False):
+  def cp_files(self, source, target, delete_source=False):
     '''Copy files
        This function can handle multiple files if source S3 URL has wildcard
        characters. It also handles recursive mode by copying all files and
@@ -777,15 +920,72 @@ class S3Handler(object):
   def del_files(self, source):
     '''Delete files on S3'''
     src_files = []
-    for key in self.s3walk(source):
-      if not key['is_dir']: # ignore directories
-        src_files.append(key['name'])
+    for obj in self.s3walk(source):
+      if not obj['is_dir']: # ignore directories
+        src_files.append(obj['name'])
+
     pool = ThreadPool(ThreadUtil, self.opt)
-
-    for src_file in src_files:
-      pool.delete(src_file)
-
+    pool.batch_delete(src_files)
     pool.join()
+
+  @log_calls
+  def relative_dir_walk(self, dir):
+    '''Generic version of directory walk. Return file list without base path
+       for comparison.
+    '''
+    result = []
+
+    if S3URL.is_valid(dir):
+      basepath = S3URL(dir).path
+      for f in (f for f in self.s3walk(dir) if not f['is_dir']):
+        result.append(os.path.relpath(S3URL(f['name']).path, basepath))
+    else:
+      for f in (f for f in self.local_walk(dir) if not os.path.isdir(f)):
+        result.append(os.path.relpath(f, dir))
+
+    return result
+
+  @log_calls
+  def dsync_files(self, source, target):
+    '''Sync directory to directory.'''
+    src_s3_url = S3URL.is_valid(source)
+    dst_s3_url = S3URL.is_valid(target)
+
+    source_list = self.relative_dir_walk(source)
+    if len(source_list) == 0 or '.' in source_list:
+      raise Failure('Sync command need to sync directory to directory.')
+
+    sync_list = [(os.path.join(source, f), os.path.join(target, f)) for f in source_list]
+
+    pool = ThreadPool(ThreadUtil, self.opt)
+    if src_s3_url and not dst_s3_url:
+      for src, dest in sync_list:
+        pool.download(src, dest)
+    elif not src_s3_url and dst_s3_url:
+      for src, dest in sync_list:
+        pool.upload(src, dest)
+    elif src_s3_url and dst_s3_url:
+      for src, dest in sync_list:
+        pool.copy(src, dest)
+    else:
+      raise InvalidArgument('Cannot sync two local directories.')
+    pool.join()
+
+    if self.opt.delete_removed:
+      target_list = self.relative_dir_walk(target)
+      remove_list = [os.path.join(target, f) for f in (set(target_list) - set(source_list))]
+
+      if S3URL.is_valid(target):
+        pool = ThreadPool(ThreadUtil, self.opt)
+        pool.batch_delete(remove_list)
+        pool.join()
+      else:
+        for f in remove_list:
+          try:
+            os.unlink(f)
+            message('Delete %s', f)
+          except:
+            pass
 
   @log_calls
   def sync_files(self, source, target):
@@ -822,6 +1022,31 @@ class S3Handler(object):
 
     return result
 
+class LocalMD5Cache(object):
+  '''Stub class to provide lazy evaluation MD5.'''
+
+  def __init__(self, filename):
+    '''Initialize md5 cache object.'''
+    self.filename = filename
+    self.md5 = None
+
+  def file_hash(self, filename, block_size=2**20):
+    '''Calculate MD5 hash code for a local file'''
+    m = hashlib.md5()
+    with open(filename, 'rb') as f:
+      while True:
+        data = f.read(block_size)
+        if not data:
+          break
+        m.update(data)
+    return m.hexdigest()
+
+  def get_md5(self):
+    '''Get or calculate MD5 value of the local file.'''
+    if self.md5 is None:
+      self.md5 = self.file_hash(self.filename)
+    return self.md5
+
 class ThreadUtil(S3Handler, ThreadPool.Worker):
   '''Thread workers for S3 operations.
      This class contains all thread workers for S3 operations.
@@ -853,62 +1078,34 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     S3Handler.__init__(self, pool.opt)
     ThreadPool.Worker.__init__(self, pool)
 
-  def reset(self):
-    '''Reset connection for retry.'''
-    if self.s3:
-      self.s3.close()
-    self.connect()
-
-  def auto_reset(func):
-    '''Simple decorator for connection reset.
-       This is necessary to have a clean connection if s3 connection failed.
-    '''
-    def wrapper(self, *args, **kwargs):
-      self.reset()
-      return func(self, *args, **kwargs)
-    return wrapper
-
   @log_calls
   def mkdirs(self, target):
     '''Ensure all directories are created for a given target file.'''
     path = os.path.dirname(target)
-    if path and path != '/' and not os.path.isdir(path):
+    if path and path != PATH_SEP and not os.path.isdir(path):
       # Multi-threading means there will be intervleaved execution
       # between the check and creation of the directory.
       try:
         os.makedirs(path)
-      except OSError, ose:
+      except OSError as ose:
         if ose.errno != errno.EEXIST:
           raise Failure('Unable to create directory (%s)' % (path,))
 
   @log_calls
-  def file_hash(self, filename, block_size = None):
-    '''Calculate MD5 hash code for a local file'''
-    if not block_size:
-      block_size = 2**20
-    m = hashlib.md5()
-    with open(filename, 'rb') as f:
-      while True:
-        data = f.read(block_size)
-        if not data:
-          break
-        m.update(data)
-    return m.hexdigest()
-
-  @log_calls
-  def sync_check(self, localFilename, remoteKey):
+  def sync_check(self, md5cache, remoteKey):
     '''Check MD5 for a local file and a remote file.
        Return True if they have the same md5 hash, otherwise False.
     '''
     if not remoteKey:
       return False
-    if not os.path.exists(localFilename):
+    if not os.path.exists(md5cache.filename):
       return False
-    localmd5 = self.file_hash(localFilename)
+    localmd5 = md5cache.get_md5()
+
     # check multiple md5 locations
-    return (remoteKey.etag and remoteKey.etag == '"%s"' % localmd5) or \
-           (remoteKey.md5 and remoteKey.md5 == localmd5) or \
-           ('md5' in remoteKey.metadata and remoteKey.metadata['md5'] == localmd5)
+    return ('ETag' in remoteKey and remoteKey['ETag'] == '"%s"' % localmd5) or \
+           ('md5' in remoteKey and remoteKey['md5'] == localmd5) or \
+           ('md5' in remoteKey['Metadata'] and remoteKey['Metadata']['md5'] == localmd5)
 
   @log_calls
   def partial_match(self, path, filter_path):
@@ -935,37 +1132,63 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     return matched and (self.opt.recursive or len(pi) <= len(fi))
 
   @log_calls
-  @auto_reset
   def s3walk(self, s3url, s3dir, filter_path, result):
     '''Thread worker for s3walk.
        Recursively walk into all subdirectories if they still match the filter
        path partially.
     '''
-    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
 
-    for key in bucket.list(s3dir, PATH_SEP):
-      if not self.partial_match(key.name, filter_path):
-        continue
+    paginator = self.s3.get_paginator('list_objects')
+    filter_path_level = filter_path.count(PATH_SEP)
 
-      # determine if it is a leaf node.
-      is_dir = (key.name[-1] == PATH_SEP)
-      if is_dir:
-        is_leaf = (key.name.count(PATH_SEP) == filter_path.count(PATH_SEP) + 1)
-      else:
-        is_leaf = (key.name.count(PATH_SEP) == filter_path.count(PATH_SEP))
+    for page in paginator.paginate(Bucket=s3url.bucket, Prefix=s3dir, Delimiter=PATH_SEP, PaginationConfig={'PageSize': 1000}):
+      # Get subdirectories first.
+      for obj in page.get('CommonPrefixes') or []:
+        obj_name = obj['Prefix']
 
-      if self.opt.recursive:
-        is_leaf = not is_dir
+        if not self.partial_match(obj_name, filter_path):
+          continue
 
-      if is_leaf:
-        result.append({
-          'name': S3URL.combine(s3url.proto, s3url.bucket, key.name),
-          'is_dir': is_dir,
-          'size': key.size if not is_dir else 0,
-          'last_modified': key.last_modified if not is_dir else None
-        })
-      elif is_dir and key.name != s3dir: # bug?
-        self.pool.s3walk(s3url, key.name, filter_path, result)
+        if self.opt.recursive or (obj_name.count(PATH_SEP) != filter_path_level + 1):
+          self.pool.s3walk(s3url, obj_name, filter_path, result)
+        else:
+          self.conditional(result, {
+            'name': S3URL.combine(s3url.proto, s3url.bucket, obj_name),
+            'is_dir': True,
+            'size': 0,
+            'last_modified': None
+          })
+
+      # Then get all items in this folder.
+      for obj in page.get('Contents') or []:
+        obj_name = obj['Key']
+        if not self.partial_match(obj_name, filter_path):
+          continue
+
+        if self.opt.recursive or obj_name.count(PATH_SEP) == filter_path_level:
+          self.conditional(result, {
+            'name': S3URL.combine(s3url.proto, s3url.bucket, obj_name),
+            'is_dir': False,
+            'size': obj['Size'],
+            'last_modified': obj['LastModified']
+          })
+
+  def conditional(self, result, obj):
+    '''Check all file item with given conditions.'''
+    fileonly = (self.opt.last_modified_before is not None) or (self.opt.last_modified_after is not None)
+
+    if obj['is_dir']:
+      if not fileonly:
+        result.append(obj)
+      return
+
+    if (self.opt.last_modified_before is not None) and obj['last_modified'] >= self.opt.last_modified_before:
+      return
+
+    if (self.opt.last_modified_after is not None) and obj['last_modified'] <= self.opt.last_modified_after:
+      return
+
+    result.append(obj)
 
   class MultipartItem:
     '''Utility class for multiple part upload/download.
@@ -979,20 +1202,31 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
            - Upload: the id of multipart upload provided by S3.
       '''
       self.id = id
-      self.processed = 0
+      self.parts = []
       self.total = -1
 
     @synchronized
-    def complete(self):
-      '''Increase the processed counter, and see if the file is completely
+    def complete(self, part):
+      '''Increase the parts list, and see if the file is completely
          uploaded or downloaded.
       '''
-      self.processed += 1
-      return self.processed == self.total
+      self.parts.append(part)
+      return (len(self.parts) == self.total)
+
+    @synchronized
+    def sorted_parts(self):
+      '''Obtain a sorted part list'''
+      # Sort part list based on AWS requirement when completed.
+      # See InvalidPartOrder in http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
+      def compare(x, y):
+        '''Comparator for part list'''
+        return cmp(x['PartNumber'], y['PartNumber'])
+
+      return sorted(self.parts, key=cmp_to_key(compare))
 
   @log_calls
   def get_file_splits(self, id, source, target, fsize, splitsize):
-    '''Get file splits for upload/download.'''
+    '''Get file splits for upload/download/copy operation.'''
     pos = 0
     part = 1 # S3 part id starts from 1
     mpi = ThreadUtil.MultipartItem(id)
@@ -1001,7 +1235,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     while pos < fsize:
       chunk = min(splitsize, fsize - pos)
       assert(chunk > 0)
-      splits.append((mpi, source, target, pos, chunk, part))
+      splits.append((source, target, mpi, pos, chunk, part))
       part += 1
       pos += chunk
     mpi.total = len(splits)
@@ -1013,163 +1247,157 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     '''Get privileges of a local file'''
     try:
       return str(oct(os.stat(source).st_mode)[-3:])
-    except Exception, e:
+    except Exception as e:
       raise Failure('Could not get stat for %s, error_message = %s', source, e)
 
   @log_calls
-  @auto_reset
-  def upload(self, mpi, source, target, pos = 0, chunk = 0, part = 0):
-    '''Thread worker for upload operation.'''
-    s3url = S3URL(target)
-    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
+  def lookup(self, s3url):
+    '''Get the s3 object with the S3 URL. Return None if not exist.'''
+    try:
+      return self.s3.head_object(Bucket=s3url.bucket, Key=s3url.path)
+    except BotoClient.ClientError as e:
+      if e.response['ResponseMetadata']['HTTPStatusCode'] == 404:
+        return None
+      else:
+        raise e
 
-    # Initialization: Set up multithreaded uploads.
-    if not mpi:
-      fsize = os.path.getsize(source)
-      key = bucket.get_key(s3url.path)
-
-      # optional checks
-      if self.opt.dry_run:
-        message('%s => %s', source, target)
-        return
-      elif self.opt.sync_check and self.sync_check(source, key):
-        message('%s => %s (synced)', source, target)
-        return
-      elif not self.opt.force and key:
-        raise Failure('File already exists: %s' % target)
-
-      # Small file optimization.
-      if fsize < self.opt.max_singlepart_upload_size:
-        key = boto.s3.key.Key(bucket)
-        key.key = s3url.path
-        key.set_metadata('privilege',  self.get_file_privilege(source))
-        key.set_contents_from_filename(source)
-        message('%s => %s', source, target)
-        return
-
-      # Here we need to have our own md5 value because multipart upload calculates
-      # different md5 values.
-      mpu = bucket.initiate_multipart_upload(s3url.path, metadata = {'md5': self.file_hash(source), 'privilege': self.get_file_privilege(source)})
-
-      for args in self.get_file_splits(mpu.id, source, target, fsize, self.opt.multipart_split_size):
-        self.pool.upload(*args)
-      return
-
-    # Handle each part in parallel, post initialization.
-    for mp in bucket.list_multipart_uploads():
-      if mp.id == mpi.id:
-        mpu = mp
-        break
-    if mpu is None:
-      raise Failure('Could not find MultiPartUpload %s' % mpu_id)
-
+  @log_calls
+  def read_file_chunk(self, source, pos, chunk):
+    '''Read local file cunks'''
     data = None
     with open(source, 'rb') as f:
       f.seek(pos)
       data = f.read(chunk)
     if not data:
       raise Failure('Unable to read data from source: %s' % source)
+    return StringIO(data)
 
-    mpu.upload_part_from_file(cStringIO.StringIO(data), part)
+  @log_calls
+  def upload(self, source, target, mpi=None, pos=0, chunk=0, part=0):
+    '''Thread worker for upload operation.'''
+    s3url = S3URL(target)
+    obj = self.lookup(s3url)
+
+    # Initialization: Set up multithreaded uploads.
+    if not mpi:
+      fsize = os.path.getsize(source)
+      md5cache = LocalMD5Cache(source)
+
+      # optional checks
+      if self.opt.dry_run:
+        message('%s => %s', source, target)
+        return
+      elif self.opt.sync_check and self.sync_check(md5cache, obj):
+        message('%s => %s (synced)', source, target)
+        return
+      elif not self.opt.force and obj:
+        raise Failure('File already exists: %s' % target)
+
+      if fsize < self.opt.max_singlepart_upload_size:
+        data = self.read_file_chunk(source, 0, fsize)
+        self.s3.put_object(Bucket=s3url.bucket,
+                           Key=s3url.path,
+                           Body=data,
+                           Metadata={'md5': md5cache.get_md5(),
+                                     'privilege': self.get_file_privilege(source)})
+        message('%s => %s', source, target)
+        return
+
+      # Here we need to have our own md5 value because multipart upload calculates
+      # different md5 values.
+      response = self.s3.create_multipart_upload(Bucket=s3url.bucket,
+                                                 Key=s3url.path,
+                                                 Metadata={'md5': md5cache.get_md5(),
+                                                           'privilege': self.get_file_privilege(source)})
+      upload_id = response['UploadId']
+
+      for args in self.get_file_splits(upload_id, source, target, fsize, self.opt.multipart_split_size):
+        self.pool.upload(*args)
+      return
+
+    data = self.read_file_chunk(source, pos, chunk)
+    response = self.s3.upload_part(Bucket=s3url.bucket, Key=s3url.path, UploadId=mpi.id, Body=data, PartNumber=part)
 
     # Finalize
-    if mpi.complete():
+    if mpi.complete({'ETag': response['ETag'], 'PartNumber': part}):
       try:
-        mpu.complete_upload()
+        self.s3.complete_multipart_upload(Bucket=s3url.bucket, Key=s3url.path, UploadId=mpi.id, MultipartUpload={'Parts': mpi.sorted_parts()})
         message('%s => %s', source, target)
-      except Exception, e:
-        mpu.cancel_upload()
+      except Exception as e:
+        message('Unable to complete upload: %s', str(e))
+        self.s3.abort_multipart_upload(Bucket=s3url.bucket, Key=s3url.path, UploadId=mpi.id)
         raise RetryFailure('Upload failed: Unable to complete upload %s.' % source)
 
   @log_calls
-  def _verify_file_size(self, key, downloaded_file):
+  def _verify_file_size(self, obj, downloaded_file):
     '''Verify the file size of the downloaded file.'''
     file_size = os.path.getsize(downloaded_file)
-    if key.size != file_size:
-      raise RetryFailure('Downloaded file size inconsistent: %s' % (repr(key)))
+    if int(obj['ContentLength']) != file_size:
+      raise RetryFailure('Downloaded file size inconsistent: %s' % (repr(obj)))
 
   @log_calls
-  def _kick_off_downloads(self, s3url, bucket, source, target):
-    '''Kick off download tasks, or directly download the file if the file is small.'''
-    key = bucket.get_key(s3url.path)
-
-    # optional checks
-    if self.opt.dry_run:
-      message('%s => %s', source, target)
-      return
-    elif self.opt.sync_check and self.sync_check(target, key):
-      message('%s => %s (synced)', source, target)
-      return
-    elif not self.opt.force and os.path.exists(target):
-      raise Failure('File already exists: %s' % target)
-
-    if key is None:
-      raise Failure('The key "%s" does not exists.' % (s3url.path,))
-
-    resp = self.s3.make_request('HEAD', bucket = bucket, key = key)
-    fsize = int(resp.getheader('content-length'))
-
-    # Small file optimization.
-    if fsize < self.opt.max_singlepart_download_size:
-      tempfile = tempfile_get(target)
-      try: # Atomically download file with
-        if self.opt.recursive:
-          self.mkdirs(tempfile)
-        key.get_contents_to_filename(tempfile)
-        self.update_privilege(source, tempfile)
-        self._verify_file_size(key, tempfile)
-        tempfile_set(tempfile, target)
-        message('%s => %s', source, target)
-      except Exception, e:
-        tempfile_set(tempfile, None)
-        raise RetryFailure('Download Failure: %s, Source: %s.' % (e.message, source))
-
-      return
-
-    # Here we use temp filename as the id of mpi.
-    for args in self.get_file_splits(tempfile_get(target), source, target, fsize, self.opt.multipart_split_size):
-      self.pool.download(*args)
-    return
+  def write_file_chunk(self, target, pos, chunk, body):
+    '''Write local file cunks'''
+    fd = os.open(target, os.O_CREAT | os.O_WRONLY)
+    try:
+      os.lseek(fd, pos, os.SEEK_SET)
+      data = body.read(chunk)
+      os.write(fd, data)
+    finally:
+      os.close(fd)
 
   @log_calls
-  @auto_reset
-  def download(self, mpi, source, target, pos = 0, chunk = 0, part = 0):
+  def download(self, source, target, mpi=None, pos=0, chunk=0, part=0):
     '''Thread worker for download operation.'''
     s3url = S3URL(source)
-    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
+    obj = self.lookup(s3url)
+    if obj is None:
+      raise Failure('The obj "%s" does not exists.' % (s3url.path,))
 
-    # Initialization
+    # Initialization: Set up multithreaded downloads.
     if not mpi:
-      self._kick_off_downloads(s3url, bucket, source, target)
-      return
+      # optional checks
+      if self.opt.dry_run:
+        message('%s => %s', source, target)
+        return
+      elif self.opt.sync_check and self.sync_check(LocalMD5Cache(target), obj):
+        message('%s => %s (synced)', source, target)
+        return
+      elif not self.opt.force and os.path.exists(target):
+        raise Failure('File already exists: %s' % target)
+
+      fsize = int(obj['ContentLength'])
+
+      # Small file optimization.
+      if fsize < self.opt.max_singlepart_download_size:
+        # Create a single part to chain back main download operation.
+        mpi = ThreadUtil.MultipartItem(tempfile_get(target))
+        mpi.total = 1
+        pos = 0
+        chunk = fsize
+        # Continue as one part download.
+      else:
+        # Here we use temp filename as the id of mpi.
+        for args in self.get_file_splits(tempfile_get(target), source, target, fsize, self.opt.multipart_split_size):
+          self.pool.download(*args)
+        return
 
     tempfile = mpi.id
     if self.opt.recursive:
       self.mkdirs(tempfile)
 
     # Download part of the file, range is inclusive.
-    resp = self.s3.make_request('GET', bucket = s3url.bucket, key = s3url.path, headers = {'Range': 'bytes=%d-%d' % (pos, pos + chunk - 1)})
-    fd = os.open(tempfile, os.O_CREAT | os.O_WRONLY)
-    try:
-      os.lseek(fd, pos, os.SEEK_SET)
-
-      while True:
-        data = resp.read(chunk)
-        if not data:
-          break
-        os.write(fd, data)
-    finally:
-      os.close(fd)
+    response = self.s3.get_object(Bucket=s3url.bucket, Key=s3url.path, Range='bytes=%d-%d' % (pos, pos + chunk - 1))
+    self.write_file_chunk(tempfile, pos, chunk, response['Body'])
 
     # Finalize
-    if mpi.complete():
-      key = bucket.get_key(s3url.path)
+    if mpi.complete({'PartNumber': part}):
       try:
-        self.update_privilege(source, tempfile)
-        self._verify_file_size(key, tempfile)
+        self.update_privilege(obj, tempfile)
+        self._verify_file_size(obj, tempfile)
         tempfile_set(tempfile, target)
         message('%s => %s', source, target)
-      except Exception, e:
+      except Exception as e:
         # Note that we don't retry in this case, because
         # We are going to remove the temp file, and if we
         # retry here with original parameters (wrapped in
@@ -1178,31 +1406,101 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         raise Failure('Download Failure: %s, Source: %s.' % (e.message, source))
 
   @log_calls
-  @auto_reset
-  def copy(self, source, target, delete_source = False):
+  def copy(self, source, target, mpi=None, pos=0, chunk=0, part=0, delete_source=False):
     '''Copy a single file from source to target using boto S3 library.'''
+
+    if self.opt.dry_run:
+      message('%s => %s' % (source, target))
+      return
+
     source_url = S3URL(source)
     target_url = S3URL(target)
 
-    if not self.opt.dry_run:
-      bucket = self.s3.lookup(source_url.bucket, validate=self.opt.validate)
-      key = bucket.get_key(source_url.path)
-      key.copy(target_url.bucket, target_url.path)
-      if delete_source:
-        key.delete()
-    message('%s => %s' % (source, target))
+    if not mpi:
+      obj = self.lookup(source_url)
+      fsize = int(obj['ContentLength'])
+
+      if fsize < self.opt.max_singlepart_copy_size:
+        self.s3.copy_object(Bucket=target_url.bucket, Key=target_url.path,
+                            CopySource={'Bucket': source_url.bucket, 'Key': source_url.path})
+
+        message('%s => %s' % (source, target))
+        if delete_source:
+          self.delete(source)
+
+        return
+
+      response = self.s3.create_multipart_upload(Bucket=target_url.bucket,
+                                                 Key=target_url.path,
+                                                 Metadata=obj['Metadata'])
+      upload_id = response['UploadId']
+
+      for args in self.get_file_splits(upload_id, source, target, fsize, self.opt.multipart_split_size):
+        self.pool.copy(*args, delete_source=delete_source)
+      return
+
+    response = self.s3.upload_part_copy(Bucket=target_url.bucket,
+                                        Key=target_url.path,
+                                        CopySource={'Bucket': source_url.bucket, 'Key': source_url.path},
+                                        CopySourceRange='bytes=%d-%d' % (pos, pos + chunk - 1),
+                                        UploadId=mpi.id,
+                                        PartNumber=part)
+
+    if mpi.complete({'ETag': response['CopyPartResult']['ETag'], 'PartNumber': part}):
+      try:
+        # Finalize copy operation.
+        self.s3.complete_multipart_upload(Bucket=target_url.bucket, Key=target_url.path, UploadId=mpi.id, MultipartUpload={'Parts': mpi.sorted_parts()})
+
+        if delete_source:
+          self.delete(source)
+
+        message('%s => %s' % (source, target))
+      except Exception as e:
+        message('Unable to complete upload: %s', str(e))
+        self.s3.abort_multipart_upload(Bucket=source_url.bucket, Key=source_url.path, UploadId=mpi.id)
+        raise RetryFailure('Copy failed: Unable to complete copy %s.' % source)
 
   @log_calls
-  @auto_reset
   def delete(self, source):
     '''Thread worker for download operation.'''
     s3url = S3URL(source)
-    bucket = self.s3.lookup(s3url.bucket, validate=self.opt.validate)
-    key = bucket.get_key(s3url.path)
 
-    if not self.opt.dry_run:
-      key.delete()
     message('Delete %s', source)
+    if not self.opt.dry_run:
+      self.s3.delete_object(Bucket=s3url.bucket, Key=s3url.path)
+
+  @log_calls
+  def batch_delete(self, sources):
+    '''Delete a list of files in batch of batch_delete_size (default=1000).'''
+    assert(type(sources) == list)
+
+    if len(sources) == 0:
+      return
+    elif len(sources) == 1:
+      self.delete(sources[0])
+    elif len(sources) > self.opt.batch_delete_size:
+      for i in range(0, len(sources), self.opt.batch_delete_size):
+        self.pool.batch_delete(sources[i:i+self.opt.batch_delete_size])
+    else:
+      bucket = S3URL(sources[0]).bucket
+      deletes = []
+      for source in sources:
+        s3url = S3URL(source)
+        if s3url.bucket != bucket:
+          raise Failure('Unable to delete keys in different bucket %s and %s.' % (s3url.bucket, bucket))
+        deletes.append({'Key': s3url.path})
+
+      response = self.s3.delete_objects(Bucket=bucket, Delete={'Objects': deletes})
+
+      # Output result of deletion.
+      for res in response.get('Deleted') or []:
+        message('Delete %s', S3URL.combine('s3', bucket, res['Key']))
+
+      for err in response.get('Errors') or []:
+        message('Error deleting %s, code(%s) %s', S3URL.combine('s3', bucket, res['Key']), err['Code'], err['Message'])
+
+      if response.get('Errors') is not None:
+        raise RetryFailure('Unable to complete deleting %d files.' % len(response.get('Errors')))
 
 class CommandHandler(object):
   '''Main class to handle commands.
@@ -1219,7 +1517,7 @@ class CommandHandler(object):
     if len(args) == 0:
       raise InvalidArgument('No command provided')
     cmd = args[0]
-    if CommandHandler.__dict__.has_key(cmd + '_handler'):
+    if cmd + '_handler' in CommandHandler.__dict__:
       CommandHandler.__dict__[cmd + '_handler'](self, args)
     else:
       raise InvalidArgument('Unknown command %s' % cmd)
@@ -1245,7 +1543,7 @@ class CommandHandler(object):
     for i, fmt in enumerate(fmts):
       valid = False
       for f in fmt.split(','):
-        if f == 'cmd' and CommandHandler.__dict__.has_key(args[i] + '_handler'):
+        if f == 'cmd' and args[i] + '_handler' in CommandHandler.__dict__:
           valid = True
         if f == 's3' and S3URL.is_valid(args[i]):
           valid = True
@@ -1255,28 +1553,27 @@ class CommandHandler(object):
         raise InvalidArgument('Invalid parameter: %s, %s expected' % (args[i], fmtMap[fmt.split(',')[0]]))
 
   @log_calls
-  def pretty_print(self, keylist):
+  def pretty_print(self, objlist):
     '''Pretty print the result of s3walk. Here we calculate the maximum width
        of each column and align them.
     '''
 
     def normalize_time(timestamp):
       '''Normalize the timestamp format for pretty print.'''
-      if not timestamp:
+      if timestamp is None:
         return ' ' * 16
-      m = TIMESTAMP_REGEX.match(timestamp)
-      result = m.groups()[0:5] if m else ['', '', '', '', '']
-      return TIMESTAMP_FORMAT % result
+
+      return TIMESTAMP_FORMAT % (timestamp.year, timestamp.month, timestamp.day, timestamp.hour, timestamp.minute)
 
     cwidth = [0, 0, 0]
     format = '%%%ds %%%ds %%-%ds'
 
     # Calculate maximum width for each column.
     result = []
-    for key in keylist:
-      last_modified = normalize_time(key['last_modified'])
-      size = str(key['size']) if not key['is_dir'] else 'DIR'
-      name = key['name']
+    for obj in objlist:
+      last_modified = normalize_time(obj['last_modified'])
+      size = str(obj['size']) if not obj['is_dir'] else 'DIR'
+      name = obj['name']
       item = (last_modified, size, name)
       for i, value in enumerate(item):
         if cwidth[i] < len(value):
@@ -1326,6 +1623,19 @@ class CommandHandler(object):
     self.s3handler().get_files(source, target)
 
   @log_calls
+  def dsync_handler(self, args):
+    '''Handler for dsync command.'''
+    self.opt.recursive = True
+    self.opt.sync_check = True
+    self.opt.force = True
+
+    self.validate('cmd|s3,local|s3,local', args)
+    source = args[1]
+    target = args[2]
+
+    self.s3handler().dsync_files(source, target)
+
+  @log_calls
   def sync_handler(self, args):
     '''Handler for sync command.
        XXX Here we emulate sync command with get/put -r -f --sync-check. So
@@ -1357,7 +1667,7 @@ class CommandHandler(object):
     self.validate('cmd|s3|s3', args)
     source = args[1]
     target = args[2]
-    self.s3handler().cp_files(source, target, True)
+    self.s3handler().cp_files(source, target, delete_source=True)
 
   @log_calls
   def del_handler(self, args):
@@ -1380,46 +1690,181 @@ class CommandHandler(object):
       total_size += size
     message(str(total_size))
 
+class ExtendedOptParser(optparse.Option):
+  '''Specialized parser to handle new types such as datetim and dict'''
+
+  REGEX_DATE = re.compile(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})')
+  REGEX_TIME = re.compile(r'(\d{1,2})\:(\d{2})')
+  REGEX_DELTA = re.compile(r'(\d{1,3})\s+(minute|hour|day|week)s?\s+(ago|before|after)')
+
+  def match_date(self, value):
+    '''Search for date information in the string'''
+    m = self.REGEX_DATE.search(value)
+    date = datetime.datetime.utcnow().date()
+    if m:
+      date = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+      value = self.REGEX_DATE.sub('', value)
+    return (date, value)
+
+  def match_time(self, value):
+    '''Search for time information in the string'''
+    m = self.REGEX_TIME.search(value)
+    time = datetime.datetime.utcnow().time()
+    if m:
+      time = datetime.time(int(m.group(1)), int(m.group(2)))
+      value = self.REGEX_TIME.sub('', value)
+    return (time, value)
+
+  def match_delta(self, value):
+    '''Search for timedelta information in the string'''
+    m = self.REGEX_DELTA.search(value)
+    delta = datetime.timedelta(days=0)
+    if m:
+      d = int(m.group(1))
+      if m.group(3) == 'ago' or m.group(3) == 'before':
+        d = -d
+
+      if m.group(2) == 'minute':
+        delta = datetime.timedelta(minutes=d)
+      elif m.group(2) == 'hour':
+        delta = datetime.timedelta(hours=d)
+      elif m.group(2) == 'day':
+        delta = datetime.timedelta(days=d)
+      elif m.group(2) == 'week':
+        delta = datetime.timedelta(weeks=d)
+      value = self.REGEX_DELTA.sub('', value)
+    return (delta, value)
+
+  def check_datetime(self, opt, value):
+    (current_date, value) = self.match_date(value.lower())
+    (current_time, value) = self.match_time(value)
+    (delta, value) = self.match_delta(value)
+
+    # We should be able to handle all stuff in value string.
+    value = value.strip()
+    if value != '':
+      raise optparse.OptionValueError("Option %s: invalid datetime value: %r" % (opt, value))
+
+    # Make sure all datetime are timezone-aware. Use UTC for all datetime instances.
+    return pytz.utc.localize(datetime.datetime.combine(current_date, current_time) + delta)
+
+  def check_dict(self, opt, value):
+    '''Take json as dictionary parameter'''
+    try:
+      return json.loads(value)
+    except:
+      raise optparse.OptionValueError("Option %s: invalid dict value: %r" % (opt, value))
+
+  # Registration functions for option parser.
+  TYPES = optparse.Option.TYPES + ('datetime', 'dict')
+  TYPE_CHECKER = optparse.Option.TYPE_CHECKER.copy()
+  TYPE_CHECKER['datetime'] = check_datetime
+  TYPE_CHECKER['dict'] = check_dict
+
 if __name__ == '__main__':
   if not sys.argv[0]: sys.argv[0] = ''  # Workaround for running with optparse from egg
 
   # Parser for command line options.
-  parser = optparse.OptionParser(description = 'Super S3 command line tool. Version %s' % S4CMD_VERSION)
-  parser.add_option('-p', '--config', help = 'path to s3cfg config file', dest = 's3cfg', type = 'string', default = None)
-  parser.add_option('-f', '--force', help = 'force overwrite files when download or upload', dest = 'force', action = 'store_true')
-  parser.add_option('-r', '--recursive', help = 'recursively checking subdirectories', dest = 'recursive', action = 'store_true')
-  parser.add_option('-D', '--delete-removed', help = 'delete remote files that do not exist locally', dest = 'delete_removed', action = 'store_true')
-  parser.add_option('-s', '--sync-check', help = 'check file md5 before download or upload', dest = 'sync_check', action = 'store_true')
-  parser.add_option('-n', '--dry-run', help = 'trial run without actual download or upload', dest = 'dry_run', action = 'store_true')
-  parser.add_option('-t', '--retry', help = 'number of retries before giving up', dest = 'retry', type = int, default = DEFAULT_RETRY)
-  parser.add_option('-c', '--num-threads', help = 'number of concurrent threads', type = int)
-  parser.add_option('-d', '--show-directory', help = 'show directory instead of its content', dest = 'show_dir', action = 'store_true')
-  parser.add_option('--multipart-split-size', help = 'size in MB to split multipart transfers', type = int, default = DEFAULT_SPLIT)
-  parser.add_option('--max-singlepart-download-size', help = 'files with size (in MB) greater than this will be downloaded in multipart transfers', type = int, default = SINGLEPART_DOWNLOAD_MAX)
-  parser.add_option('--max-singlepart-upload-size', help = 'files with size (in MB) greater than this will be uploaded in multipart transfers', type = int, default = SINGLEPART_UPLOAD_MAX)
-  parser.add_option('--ignore-empty-source', help = 'ignore empty source from s3', dest = 'ignore_empty_source', action = 'store_true')
-  parser.add_option('--use-ssl', help = 'use SSL connection to S3', dest = 'use_ssl', action = 'store_true')
-  parser.add_option('--verbose', help = 'verbose output', dest = 'verbose', action = 'store_true')
-  parser.add_option('--debug', help = 'debug output', dest = 'debug', action = 'store_true')
-  parser.add_option('--validate', help = 'validate lookup operation', dest = 'validate', action = 'store_true')
+  parser = optparse.OptionParser(
+    option_class=ExtendedOptParser,
+    description='Super S3 command line tool. Version %s' % S4CMD_VERSION)
 
-  (options, args) = parser.parse_args()
-  opt = Options(options)
-  initialize(opt)
+  parser.add_option(
+      '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
+      type='string', default=None)
+  parser.add_option(
+      '-f', '--force', help='force overwrite files when download or upload',
+      dest='force', action='store_true', default=False)
+  parser.add_option(
+      '-r', '--recursive', help='recursively checking subdirectories',
+      dest='recursive', action='store_true', default=False)
+  parser.add_option(
+      '-s', '--sync-check', help='check file md5 before download or upload',
+      dest='sync_check', action='store_true', default=False)
+  parser.add_option(
+      '-n', '--dry-run', help='trial run without actual download or upload',
+      dest='dry_run', action='store_true', default=False)
+  parser.add_option(
+      '-t', '--retry', help='number of retries before giving up',
+      dest='retry', type=int, default=3)
+  parser.add_option(
+      '--retry-delay', help='seconds to sleep between retries',
+      type=int, default=10)
+  parser.add_option(
+      '-c', '--num-threads', help='number of concurrent threads',
+      type=int, default=get_default_thread_count())
+  parser.add_option(
+      '-d', '--show-directory', help='show directory instead of its content',
+      dest='show_dir', action='store_true', default=False)
+  parser.add_option(
+      '--ignore-empty-source', help='ignore empty source from s3',
+      dest='ignore_empty_source', action='store_true', default=False)
+  parser.add_option(
+      '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
+      action='store_true', default=False)
+  parser.add_option(
+      '--verbose', help='verbose output', dest='verbose',
+      action='store_true', default=False)
+  parser.add_option(
+      '--debug', help='debug output', dest='debug',
+      action='store_true', default=False)
+  parser.add_option(
+      '--validate', help='(obsolete) validate lookup operation', dest='validate',
+      action='store_true', default=False)
+  parser.add_option(
+      '-D', '--delete-removed',
+      help='delete remote files that do not exist in source after sync',
+      dest='delete_removed', action='store_true', default=False)
+  parser.add_option(
+      '--multipart-split-size',
+      help='size in bytes to split multipart transfers', type=int,
+      default=50 * 1024 * 1024)
+  parser.add_option(
+      '--max-singlepart-download-size',
+      help='files with size (in bytes) greater than this will be downloaded in '
+      'multipart transfers', type=int, default=50 * 1024 * 1024)
+  parser.add_option(
+      '--max-singlepart-upload-size',
+      help='files with size (in bytes) greater than this will be uploaded in '
+      'multipart transfers', type=int, default=4500 * 1024 * 1024)
+  parser.add_option(
+      '--max-singlepart-copy-size',
+      help='files with size (in bytes) greater than this will be copied in '
+      'multipart transfers', type=int, default=100 * 1024 * 1024)
+  parser.add_option(
+      '--batch-delete-size',
+      help='Number of files (<1000) to be combined in batch delete.',
+      type=int, default=1000)
+  parser.add_option(
+      '--last-modified-before',
+      help='Condition on files where their last modified dates are before given parameter.',
+      type='datetime', default=None)
+  parser.add_option(
+      '--last-modified-after',
+      help='Condition on files where their last modified dates are after given parameter.',
+      type='datetime', default=None)
+
+  # Extra S3 API arguments
+  BotoClient.add_options(parser)
+
+  # Combine parameters from environment variable. This is useful for global settings.
+  env_opts = (shlex.split(os.environ[S4CMD_ENV_KEY]) if S4CMD_ENV_KEY in os.environ else [])
+  (opt, args) = parser.parse_args(sys.argv[1:] + env_opts)
+  s4cmd_logging.configure(opt)
 
   # Initalize keys for S3.
-  S3Handler.init_s3_keys(options)
+  S3Handler.init_s3_keys(opt)
 
   try:
     CommandHandler(opt).run(args)
-  except InvalidArgument, e:
-    fail('[Invalid Argument] ', exc_info = e)
-  except Failure, e:
-    fail('[Runtime Failure] ', exc_info = e)
-  except boto.exception.S3ResponseError, e:
-    fail('[S3ResponseError] %s: %s' % (e.error_code, e.error_message))
-  except Exception, e:
-    fail('[Runtime Exception] ', exc_info = e, stacktrace = True)
+  except InvalidArgument as e:
+    fail('[Invalid Argument] ', exc_info=e)
+  except Failure as e:
+    fail('[Runtime Failure] ', exc_info=e)
+  except BotoClient.BotoError as e:
+    fail('[Boto3Error] %s: %s' % (e.error_code, e.error_message))
+  except Exception as e:
+    fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
 
   clean_tempfiles()
   progress('') # Clear progress message before exit.
@@ -1462,3 +1907,15 @@ if __name__ == '__main__':
 #   - 1.5.19: Set socket.setdefaulttimeout() to prevent boto/s3 socket read block in httplib.
 #   - 1.5.20: Merge change from oniltonmaciel@github for arguments for multi-part upload.
 #             Fix setup.py for module and command line tool
+#   - 1.5.21: Merge changes from linsomniac@github for better argument parsing
+#   - 1.5.22: Add compatibility for Python3
+#   - 1.5.23: Add bash command line completion
+#   - 2.0.0:  Fully migrated from old boto 2.x to new boto3 library.
+#             Support S3 pass through APIs.
+#             Support batch delete (with delete_objects API).
+#             Support S4CMD_OPTS environment variable.
+#             Support moving files larger than 5GB with multipart upload.
+#             Support timestamp filtering with --last-modified-before and --last-modified-after options.
+#             Faster upload with lazy evaluation of md5 hash.
+#             Listing large number of files with S3 pagination, with memory is the limit.
+#             New directory to directory dsync command to replace old sync command.

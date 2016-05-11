@@ -25,7 +25,7 @@ from setuptools import setup, find_packages
 __author__ = "Chou-han Yang"
 __copyright__ = "Copyright 2014 BloomReach, Inc."
 __license__ = "http://www.apache.org/licenses/LICENSE-2.0"
-__version__ = "1.5.20"
+__version__ = "2.0.0"
 __maintainer__ = __author__
 __status__ = "Development"
 
@@ -37,5 +37,5 @@ setup(name='s4cmd',
       url='https://github.com/bloomreach/s4cmd',
       py_modules=['s4cmd'],
       scripts=['s4cmd', 's4cmd.py'], # Added s4cmd.py as script for backward compatibility
-      install_requires=['boto>=2.3.0'],
+      install_requires=['boto3>=1.3.1'],
     )
