@@ -45,7 +45,7 @@ from functools import cmp_to_key
 ## Global constants
 ##
 
-S4CMD_VERSION = "2.0.0"
+S4CMD_VERSION = "2.0.1"
 
 PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
@@ -636,6 +636,16 @@ class S3Handler(object):
       return None
 
   @staticmethod
+  def s3_keys_from_cmdline(opt):
+    '''Retrieve S3 access keys from the command line, or None if not present.'''
+    if opt.access_key != None and opt.secret_key != None:
+      keys = (opt.access_key, opt.secret_key)
+      debug("read S3 keys from commandline")
+      return keys
+    else:
+      return None
+
+  @staticmethod
   def s3_keys_from_s3cfg(opt):
     '''Retrieve S3 access key settings from s3cmd's config file, if present; otherwise return None.'''
     try:
@@ -657,7 +667,8 @@ class S3Handler(object):
   @staticmethod
   def init_s3_keys(opt):
     '''Initialize s3 access keys from environment variable or s3cfg config file.'''
-    S3Handler.S3_KEYS = S3Handler.s3_keys_from_env() or S3Handler.s3_keys_from_s3cfg(opt)
+    S3Handler.S3_KEYS = S3Handler.s3_keys_from_cmdline(opt) or S3Handler.s3_keys_from_env() \
+                        or S3Handler.s3_keys_from_s3cfg(opt)
 
   def __init__(self, opt):
     '''Constructor, connect to S3 store'''
@@ -1773,6 +1784,12 @@ if __name__ == '__main__':
       '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
       type='string', default=None)
   parser.add_option(
+      '--access-key', help = 'use access_key for connection to S3', dest = 'access_key',
+      type = 'string', default = None)
+  parser.add_option(
+      '--secret-key', help = 'use security key for connection to S3', dest = 'secret_key',
+      type = 'string', default = None)
+  parser.add_option(
       '-f', '--force', help='force overwrite files when download or upload',
       dest='force', action='store_true', default=False)
   parser.add_option(
@@ -1854,7 +1871,8 @@ if __name__ == '__main__':
 
   # Initalize keys for S3.
   S3Handler.init_s3_keys(opt)
-
+  if S3Handler.S3_KEYS is None:
+    fail('[Invalid Argument] access key or secret key is not provided ', status = -1)
   try:
     CommandHandler(opt).run(args)
   except InvalidArgument as e:
@@ -1919,3 +1937,4 @@ if __name__ == '__main__':
 #             Faster upload with lazy evaluation of md5 hash.
 #             Listing large number of files with S3 pagination, with memory is the limit.
 #             New directory to directory dsync command to replace old sync command.
+#   - 2.0.1:  Merge change from @rameshrajagopal for S3 keys in command-line parameters.
