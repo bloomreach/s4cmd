@@ -12,7 +12,7 @@ Chou-han Yang
 - Fully migrated from old boto 2.x to new [boto3](http://boto3.readthedocs.io/en/latest/reference/services/s3.html)  library, which provides more reliable and up-to-date S3 backend.
 - Support S3 `--API-ServerSideEncryption` along with **36 new API pass-through options**. See API pass-through options section for complete list.
 - Support batch delete (with delete_objects API) to delete up to 1000 files with single call. **100+ times faster** than sequential deletion.
-- Support `S4CMD_OPTS` environment variable for commonly used options such as --API-ServerSideEncryption aross all your s4cmd operations.
+- Support `S4CMD_OPTS` environment variable for commonly used options such as `--API-ServerSideEncryption` aross all your s4cmd operations.
 - Support moving files **larger than 5GB** with multipart upload. **20+ times faster** then sequential move operation when moving large files.
 - Support timestamp filtering with `--last-modified-before` and `--last-modified-after` options for all operations. Human friendly timestamps are supported, e.g. `--last-modified-before='2 months ago'`
 - Faster upload with lazy evaluation of md5 hash.
