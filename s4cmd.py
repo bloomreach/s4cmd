@@ -259,8 +259,8 @@ class S3URL:
     return S3URL.S3URL_PATTERN.match(uri) != None
 
 class BotoClient(object):
-  '''This is a bridge between s4cmd and boto3 library. All S3 method callsed should go thought this class.
-     The white list ALLOWED_CLIENT_METHODS lists those methods that are allowed to use. Also, EXTRA_CLIENT_PARAMS
+  '''This is a bridge between s4cmd and boto3 library. All S3 method calls should go through this class.
+     The white list ALLOWED_CLIENT_METHODS lists those methods that are allowed. Also, EXTRA_CLIENT_PARAMS
      is the list of S3 parameters that we can take from command-line argument and pass through to the API.
   '''
 
@@ -442,7 +442,7 @@ class BotoClient(object):
 
   @staticmethod
   def add_options(parser):
-    '''Add the who list of API parameters into optparse.'''
+    '''Add the whole list of API parameters into optparse.'''
     for param, param_type, param_doc in BotoClient.EXTRA_CLIENT_PARAMS:
       parser.add_option('--API-' + param, help=param_doc, type=param_type, dest=param)
 
