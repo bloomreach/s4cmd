@@ -49,7 +49,7 @@ setup(name='s4cmd',
       url='https://github.com/bloomreach/s4cmd',
       py_modules=['s4cmd'],
       scripts=['s4cmd', 's4cmd.py'], # Added s4cmd.py as script for backward compatibility
-      install_requires=['boto3>=1.3.1'],
+      install_requires=['boto3>=1.3.1', 'pytz>=2016.4'],
       data_files=[('/etc/bash_completion.d/',['data/bash-completion/s4cmd'])],
       cmdclass={'install': install},
     )
