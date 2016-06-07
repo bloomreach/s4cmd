@@ -21,6 +21,7 @@
 Super S3 command line tool.
 """
 
+import mimetypes
 import sys, os, re, optparse, multiprocessing, fnmatch, time, hashlib, errno, pytz
 import logging, traceback, types, threading, random, socket, shlex, datetime, json
 
@@ -700,7 +701,7 @@ class S3Handler(object):
           'is_dir': True,
           'size': 0,
           'last_modified': bucket['CreationDate']
-        })
+      })
     return result
 
   @log_calls
@@ -1314,13 +1315,38 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       elif not self.opt.force and obj:
         raise Failure('File already exists: %s' % target)
 
+      content_type = self.opt.default_mime_type
+
+      content_charset = None
+
+      if source == "-" and not self.opt.default_mime_type:
+        raise ValueError(
+          "You must specify --mime-type or --default-mime-type for files "
+          "uploaded from stdin.")
+
+      if self.opt.guess_mime_type:
+        # TODO: Copy mime magic from s3cmd
+        # if self.opt.use_mime_magic:
+        #   (content_type, content_charset) = mime_magic(filename)
+        # else:
+        (content_type, content_charset) = mimetypes.guess_type(source)
+
+      if not content_type:
+        content_type = self.opt.default_mime_type
+
+      metadata = {
+        'md5': md5cache.get_md5(),
+        'privilege': self.get_file_privilege(source)
+      }
+
       if fsize < self.opt.max_singlepart_upload_size:
         data = self.read_file_chunk(source, 0, fsize)
         self.s3.put_object(Bucket=s3url.bucket,
                            Key=s3url.path,
                            Body=data,
-                           Metadata={'md5': md5cache.get_md5(),
-                                     'privilege': self.get_file_privilege(source)})
+                           Metadata=metadata,
+                           ContentType=content_type)
+
         message('%s => %s', source, target)
         return
 
@@ -1328,8 +1354,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       # different md5 values.
       response = self.s3.create_multipart_upload(Bucket=s3url.bucket,
                                                  Key=s3url.path,
-                                                 Metadata={'md5': md5cache.get_md5(),
-                                                           'privilege': self.get_file_privilege(source)})
+                                                 Metadata=metadata,
+                                                 ContentType=content_type)
       upload_id = response['UploadId']
 
       for args in self.get_file_splits(upload_id, source, target, fsize, self.opt.multipart_split_size):
@@ -1501,7 +1527,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       self.delete(sources[0])
     elif len(sources) > self.opt.batch_delete_size:
       for i in range(0, len(sources), self.opt.batch_delete_size):
-        self.pool.batch_delete(sources[i:i+self.opt.batch_delete_size])
+        self.pool.batch_delete(sources[i:i + self.opt.batch_delete_size])
     else:
       bucket = S3URL(sources[0]).bucket
       deletes = []
@@ -1785,10 +1811,16 @@ class ExtendedOptParser(optparse.Option):
     except:
       raise optparse.OptionValueError("Option %s: invalid dict value: %r" % (opt, value))
 
+  def check_mimetype(option, opt, value):
+    if re.compile("^[a-z0-9]+/[a-z0-9+\.-]+(;.*)?$", re.IGNORECASE).match(value):
+      return value
+    raise optparse.OptionValueError("option %s: invalid MIME-Type format: %r" % (opt, value))
+
   # Registration functions for option parser.
-  TYPES = optparse.Option.TYPES + ('datetime', 'dict')
+  TYPES = optparse.Option.TYPES + ('datetime', 'dict', 'mimetype')
   TYPE_CHECKER = optparse.Option.TYPE_CHECKER.copy()
   TYPE_CHECKER['datetime'] = check_datetime
+  TYPE_CHECKER["mimetype"] = check_mimetype
   TYPE_CHECKER['dict'] = check_dict
 
 if __name__ == '__main__':
@@ -1800,85 +1832,106 @@ if __name__ == '__main__':
     description='Super S3 command line tool. Version %s' % S4CMD_VERSION)
 
   parser.add_option(
-      '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
-      type='string', default=None)
+    '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
+    type='string', default=None)
   parser.add_option(
-      '--access-key', help = 'use access_key for connection to S3', dest = 'access_key',
-      type = 'string', default = None)
+    '--access-key', help='use access_key for connection to S3',
+    dest='access_key',
+    type='string', default=None)
   parser.add_option(
-      '--secret-key', help = 'use security key for connection to S3', dest = 'secret_key',
-      type = 'string', default = None)
+    '--secret-key', help='use security key for connection to S3',
+    dest='secret_key',
+    type='string', default=None)
   parser.add_option(
-      '-f', '--force', help='force overwrite files when download or upload',
-      dest='force', action='store_true', default=False)
+    '-f', '--force', help='force overwrite files when download or upload',
+    dest='force', action='store_true', default=False)
   parser.add_option(
-      '-r', '--recursive', help='recursively checking subdirectories',
-      dest='recursive', action='store_true', default=False)
+    '-r', '--recursive', help='recursively checking subdirectories',
+    dest='recursive', action='store_true', default=False)
   parser.add_option(
-      '-s', '--sync-check', help='check file md5 before download or upload',
-      dest='sync_check', action='store_true', default=False)
+    '-s', '--sync-check', help='check file md5 before download or upload',
+    dest='sync_check', action='store_true', default=False)
   parser.add_option(
-      '-n', '--dry-run', help='trial run without actual download or upload',
-      dest='dry_run', action='store_true', default=False)
+    '-n', '--dry-run', help='trial run without actual download or upload',
+    dest='dry_run', action='store_true', default=False)
   parser.add_option(
-      '-t', '--retry', help='number of retries before giving up',
-      dest='retry', type=int, default=3)
+    '-t', '--retry', help='number of retries before giving up',
+    dest='retry', type=int, default=3)
   parser.add_option(
-      '--retry-delay', help='seconds to sleep between retries',
-      type=int, default=10)
+    '--retry-delay', help='seconds to sleep between retries',
+    type=int, default=10)
   parser.add_option(
-      '-c', '--num-threads', help='number of concurrent threads',
-      type=int, default=get_default_thread_count())
+    '-c', '--num-threads', help='number of concurrent threads',
+    type=int, default=get_default_thread_count())
   parser.add_option(
-      '-d', '--show-directory', help='show directory instead of its content',
-      dest='show_dir', action='store_true', default=False)
+    '-d', '--show-directory', help='show directory instead of its content',
+    dest='show_dir', action='store_true', default=False)
   parser.add_option(
-      '--ignore-empty-source', help='ignore empty source from s3',
-      dest='ignore_empty_source', action='store_true', default=False)
+    '--ignore-empty-source', help='ignore empty source from s3',
+    dest='ignore_empty_source', action='store_true', default=False)
   parser.add_option(
-      '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
-      action='store_true', default=False)
+    '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
+    action='store_true', default=False)
   parser.add_option(
-      '--verbose', help='verbose output', dest='verbose',
-      action='store_true', default=False)
+    '--verbose', help='verbose output', dest='verbose',
+    action='store_true', default=False)
   parser.add_option(
-      '--debug', help='debug output', dest='debug',
-      action='store_true', default=False)
+    '--debug', help='debug output', dest='debug',
+    action='store_true', default=False)
   parser.add_option(
-      '--validate', help='(obsolete) validate lookup operation', dest='validate',
-      action='store_true', default=False)
+    '--validate', help='(obsolete) validate lookup operation',
+    dest='validate',
+    action='store_true', default=False)
   parser.add_option(
-      '-D', '--delete-removed',
-      help='delete remote files that do not exist in source after sync',
-      dest='delete_removed', action='store_true', default=False)
+    '-D', '--delete-removed',
+    help='delete remote files that do not exist in source after sync',
+    dest='delete_removed', action='store_true', default=False)
   parser.add_option(
-      '--multipart-split-size',
-      help='size in bytes to split multipart transfers', type=int,
-      default=50 * 1024 * 1024)
+    '--multipart-split-size',
+    help='size in bytes to split multipart transfers', type=int,
+    default=50 * 1024 * 1024)
   parser.add_option(
-      '--max-singlepart-download-size',
-      help='files with size (in bytes) greater than this will be downloaded in '
-      'multipart transfers', type=int, default=50 * 1024 * 1024)
+    '--max-singlepart-download-size',
+    help='files with size (in bytes) greater than this will be downloaded in '
+         'multipart transfers', type=int, default=50 * 1024 * 1024)
   parser.add_option(
-      '--max-singlepart-upload-size',
-      help='files with size (in bytes) greater than this will be uploaded in '
-      'multipart transfers', type=int, default=4500 * 1024 * 1024)
+    '--max-singlepart-upload-size',
+    help='files with size (in bytes) greater than this will be uploaded in '
+         'multipart transfers', type=int, default=4500 * 1024 * 1024)
   parser.add_option(
-      '--max-singlepart-copy-size',
-      help='files with size (in bytes) greater than this will be copied in '
-      'multipart transfers', type=int, default=100 * 1024 * 1024)
+    '--max-singlepart-copy-size',
+    help='files with size (in bytes) greater than this will be copied in '
+         'multipart transfers', type=int, default=100 * 1024 * 1024)
   parser.add_option(
-      '--batch-delete-size',
-      help='Number of files (<1000) to be combined in batch delete.',
-      type=int, default=1000)
+    '--batch-delete-size',
+    help='Number of files (<1000) to be combined in batch delete.',
+    type=int, default=1000)
   parser.add_option(
-      '--last-modified-before',
-      help='Condition on files where their last modified dates are before given parameter.',
-      type='datetime', default=None)
+    '--last-modified-before',
+    help='Condition on files where their last modified dates are before given parameter.',
+    type='datetime', default=None)
   parser.add_option(
-      '--last-modified-after',
-      help='Condition on files where their last modified dates are after given parameter.',
-      type='datetime', default=None)
+    '--last-modified-after',
+    help='Condition on files where their last modified dates are after given parameter.',
+    type='datetime', default=None)
+
+  parser.add_option(
+    '-M',
+    '--guess-mime-type',
+    help='Guess MIME-type of files by their extension or mime magic. Fall '
+         'back to default MIME-Type as specified by --default-mime-type option',
+    dest='guess_mime_type',
+    action='store_true'
+  )
+
+  parser.add_option(
+    "--default-mime-type",
+    dest="default_mime_type",
+    type="mimetype",
+    action="store",
+    help="Default MIME-type for stored objects. Application default is "
+         "binary/octet-stream",
+    default="binary/octet-stream")
 
   # Extra S3 API arguments
   BotoClient.add_options(parser)
