@@ -27,7 +27,7 @@ from setuptools.command.install import install as _install
 __author__ = "Chou-han Yang"
 __copyright__ = "Copyright 2014 BloomReach, Inc."
 __license__ = "http://www.apache.org/licenses/LICENSE-2.0"
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __maintainer__ = __author__
 __status__ = "Development"
 
