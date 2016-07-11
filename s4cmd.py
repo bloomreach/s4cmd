@@ -837,7 +837,7 @@ class S3Handler(object):
     for source in sources:
       s3url = S3URL(source)
       response = self.s3.get_object(Bucket=s3url.bucket, Key=s3url.path)
-      message(response['Body'].read())
+      message('%s', response['Body'].read())
 
   @log_calls
   def get_single_file(self, pool, source, target):
