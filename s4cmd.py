@@ -830,6 +830,16 @@ class S3Handler(object):
       os.chmod(target, int(obj['Metadata']['privilege'], 8))
 
   @log_calls
+  def print_files(self, source):
+    '''Print out a series of files'''
+    sources = self.source_expand(source)
+
+    for source in sources:
+      s3url = S3URL(source)
+      response = self.s3.get_object(Bucket=s3url.bucket, Key=s3url.path)
+      message('%s', response['Body'].read())
+
+  @log_calls
   def get_single_file(self, pool, source, target):
     '''Download a single file or a directory by adding a task into queue'''
     if source[-1] == PATH_SEP:
@@ -1632,6 +1642,15 @@ class CommandHandler(object):
     source = args[1]
     target = args[2]
     self.s3handler().get_files(source, target)
+
+  @log_calls
+  def cat_handler(self, args):
+    '''Handler for cat command'''
+
+    self.validate('cmd|s3', args)
+    source = args[1]
+
+    self.s3handler().print_files(source)
 
   @log_calls
   def dsync_handler(self, args):
