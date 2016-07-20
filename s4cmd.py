@@ -22,7 +22,8 @@ Super S3 command line tool.
 """
 
 import sys, os, re, optparse, multiprocessing, fnmatch, time, hashlib, errno, pytz
-import logging, traceback, types, threading, random, socket, shlex, datetime, json
+import logging, tempfile, traceback, types, threading, random, socket, shlex, datetime, json
+from subprocess import call
 
 IS_PYTHON2 = sys.version_info[0] == 2
 
@@ -61,6 +62,7 @@ S3_ACCESS_KEY_NAME = "S3_ACCESS_KEY"
 S3_SECRET_KEY_NAME = "S3_SECRET_KEY"
 S4CMD_ENV_KEY = "S4CMD_OPTS"
 
+EDITOR = os.environ.get('EDITOR', 'vim')
 
 ##
 ## Utility classes
@@ -245,6 +247,10 @@ class S3URL:
         break
       fi.append(p)
     return PATH_SEP.join(fi)
+
+  def get_file_name(self):
+    '''Get the final path component, without the directory'''
+    return self.path.split(PATH_SEP)[-1]
 
   @staticmethod
   def combine(proto, bucket, path):
@@ -1651,6 +1657,33 @@ class CommandHandler(object):
     source = args[1]
 
     self.s3handler().print_files(source)
+
+  @log_calls
+  def edit_handler(self, args):
+    '''Handler for edit command'''
+    self.opt.force = True
+    self.opt.ignore_empty_source = True
+
+    self.validate('cmd|s3', args)
+    source = args[1]
+    # We append the old filename so that the editor can apply things like syntax highlighting if appropriate
+    target = os.path.join(tempfile.gettempdir(), hashlib.md5(source).hexdigest() + '-' + S3URL(source).get_file_name())
+
+    TEMP_FILES.add(target)
+
+    self.s3handler().get_files(source, target)
+    # In case the file doesn't already exist on S3, just create an empty file to fill in.
+    open(target, 'a').close()
+
+    old_content_hash = LocalMD5Cache(target).get_md5()
+    call([EDITOR, target])
+    new_content_hash = LocalMD5Cache(target).get_md5()
+
+    if old_content_hash == new_content_hash:
+      message('No changes detected')
+    else:
+      self.s3handler().put_files(target, source)
+
 
   @log_calls
   def dsync_handler(self, args):
