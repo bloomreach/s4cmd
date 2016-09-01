@@ -1285,6 +1285,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   @log_calls
   def read_file_chunk(self, source, pos, chunk):
     '''Read local file cunks'''
+    if chunk==0:
+        return StringIO()
     data = None
     with open(source, 'rb') as f:
       f.seek(pos)
