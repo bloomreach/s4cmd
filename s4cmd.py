@@ -1306,10 +1306,13 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
       # optional checks
       if self.opt.dry_run:
-        message('%s => %s', source, target)
+        if self.opt.sync_check and self.sync_check(md5cache, obj):
+          info('%s => %s (synced)', source, target)
+        else:
+          message('%s => %s', source, target)
         return
       elif self.opt.sync_check and self.sync_check(md5cache, obj):
-        message('%s => %s (synced)', source, target)
+        info('%s => %s (synced)', source, target)
         return
       elif not self.opt.force and obj:
         raise Failure('File already exists: %s' % target)
