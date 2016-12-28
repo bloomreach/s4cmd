@@ -59,6 +59,7 @@ TEMP_FILES = set()
 # Environment variable names for S3 credentials.
 S3_ACCESS_KEY_NAME = "S3_ACCESS_KEY"
 S3_SECRET_KEY_NAME = "S3_SECRET_KEY"
+S3_SESSION_TOKEN_NAME = "S3_SESSION_TOKEN"
 S4CMD_ENV_KEY = "S4CMD_OPTS"
 
 
@@ -376,15 +377,21 @@ class BotoClient(object):
        "If the bucket is configured as a website, redirects requests for this object to another object in the same bucket or to an external URL. Amazon S3 stores the value of this header in the object metadata."),
   ]
 
-  def __init__(self, opt, aws_access_key_id=None, aws_secret_access_key=None):
+  def __init__(self, opt, aws_access_key_id=None, aws_secret_access_key=None, aws_session_token=None):
     '''Initialize boto3 API bridge class. Calculate and cache all legal parameters
        for each method we are going to call.
     '''
     self.opt = opt
     if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
-      self.client = self.boto3.client('s3',
+      if (aws_session_token is not None):
+        self.client = self.boto3.client('s3',
                                       aws_access_key_id=aws_access_key_id,
-                                      aws_secret_access_key=aws_secret_access_key)
+                                      aws_secret_access_key=aws_secret_access_key,
+                                      aws_session_token=aws_session_token)
+      else:
+        self.client = self.boto3.client('s3',
+                                        aws_access_key_id=aws_access_key_id,
+                                        aws_secret_access_key=aws_secret_access_key)
     else:
       self.client = self.boto3.client('s3')
 
@@ -630,6 +637,8 @@ class S3Handler(object):
     env = os.environ
     if S3_ACCESS_KEY_NAME in env and S3_SECRET_KEY_NAME in env:
       keys = (env[S3_ACCESS_KEY_NAME], env[S3_SECRET_KEY_NAME])
+      if S3_SESSION_TOKEN_NAME in env:
+        keys = keys + (env[S3_SESSION_TOKEN_NAME],)
       debug("read S3 keys from environment")
       return keys
     else:
@@ -640,6 +649,8 @@ class S3Handler(object):
     '''Retrieve S3 access keys from the command line, or None if not present.'''
     if opt.access_key != None and opt.secret_key != None:
       keys = (opt.access_key, opt.secret_key)
+      if opt.session_token != None:
+        keys = keys + (opt.session_token,)
       debug("read S3 keys from commandline")
       return keys
     else:
@@ -658,6 +669,8 @@ class S3Handler(object):
       config = ConfigParser.ConfigParser()
       config.read(s3cfg_path)
       keys = config.get("default", "access_key"), config.get("default", "secret_key")
+      if config.has_option("default", "session_token"):
+        keys = keys + (config.get("default", "session_token"),)
       debug("read S3 keys from $HOME/.s3cfg file")
       return keys
     except Exception as e:
@@ -684,7 +697,10 @@ class S3Handler(object):
     '''Connect to S3 storage'''
     try:
       if S3Handler.S3_KEYS:
-        self.s3 = BotoClient(self.opt, S3Handler.S3_KEYS[0], S3Handler.S3_KEYS[1])
+        if len(S3Handler.S3_KEYS) == 3:
+          self.s3 = BotoClient(self.opt, S3Handler.S3_KEYS[0], S3Handler.S3_KEYS[1], S3Handler.S3_KEYS[2])
+        else:
+          self.s3 = BotoClient(self.opt, S3Handler.S3_KEYS[0], S3Handler.S3_KEYS[1])
       else:
         self.s3 = BotoClient(self.opt)
     except Exception as e:
@@ -1809,6 +1825,9 @@ if __name__ == '__main__':
       '--secret-key', help = 'use security key for connection to S3', dest = 'secret_key',
       type = 'string', default = None)
   parser.add_option(
+      '--session-token', help = 'use temporary sts session token for connection to S3', dest = 'session_token',
+      type = 'string', default = None)
+  parser.add_option(
       '-f', '--force', help='force overwrite files when download or upload',
       dest='force', action='store_true', default=False)
   parser.add_option(
@@ -1891,7 +1910,7 @@ if __name__ == '__main__':
   # Initalize keys for S3.
   S3Handler.init_s3_keys(opt)
   if S3Handler.S3_KEYS is None:
-    fail('[Invalid Argument] access key or secret key is not provided ', status = -1)
+    fail('[Invalid Argument] access key, secret key, or session token is not provided ', status = -1)
   try:
     CommandHandler(opt).run(args)
   except InvalidArgument as e:
@@ -1957,3 +1976,4 @@ if __name__ == '__main__':
 #             Listing large number of files with S3 pagination, with memory is the limit.
 #             New directory to directory dsync command to replace old sync command.
 #   - 2.0.1:  Merge change from @rameshrajagopal for S3 keys in command-line parameters.
+#   - 2.1.0:  Support temporary STS session tokens.
