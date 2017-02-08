@@ -97,6 +97,8 @@ a single file!)
 - If you already have a `~/.s3cfg` file from configuring `s3cmd`, credentials
 from this file will be used.  Otherwise, set the `S3_ACCESS_KEY` and
 `S3_SECRET_KEY` environment variables to contain your S3 credentials.
+- If no keys are provided, but an IAM role is associated with the EC2 instance, it will
+be used transparently.
 
 
 ## s4cmd Commands

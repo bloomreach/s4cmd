@@ -271,6 +271,7 @@ class BotoClient(object):
   # Exported exceptions.
   BotoError = boto3.exceptions.Boto3Error
   ClientError = botocore.exceptions.ClientError
+  NoCredentialsError = botocore.exceptions.NoCredentialsError
 
   # Exceptions that retries may work. May change in the future.
   S3RetryableErrors = (
@@ -1890,14 +1891,14 @@ if __name__ == '__main__':
 
   # Initalize keys for S3.
   S3Handler.init_s3_keys(opt)
-  if S3Handler.S3_KEYS is None:
-    fail('[Invalid Argument] access key or secret key is not provided ', status = -1)
   try:
     CommandHandler(opt).run(args)
   except InvalidArgument as e:
     fail('[Invalid Argument] ', exc_info=e)
   except Failure as e:
     fail('[Runtime Failure] ', exc_info=e)
+  except BotoClient.NoCredentialsError as e:
+    fail('[Invalid Argument] ', exc_info=e)
   except BotoClient.BotoError as e:
     fail('[Boto3Error] %s: %s' % (e.error_code, e.error_message))
   except Exception as e:
