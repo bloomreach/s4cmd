@@ -1187,7 +1187,14 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         if not self.partial_match(obj_name, filter_path):
           continue
 
+        if obj_name == filter_path or obj_name == filter_path + '/':
+            # This is not a real file/object, it's just the name of the containing folder. Maybe S3 changed their protocol or something?
+            continue
+
         if self.opt.recursive or obj_name.count(PATH_SEP) == filter_path_level:
+          debug(filter_path)
+          debug(repr(obj))
+          debug(repr(s3url))
           self.conditional(result, {
             'name': S3URL.combine(s3url.proto, s3url.bucket, obj_name),
             'is_dir': False,
