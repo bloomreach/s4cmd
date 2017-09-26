@@ -1164,6 +1164,11 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     filter_path_level = filter_path.count(PATH_SEP)
 
     for page in paginator.paginate(Bucket=s3url.bucket, Prefix=s3dir, Delimiter=PATH_SEP, PaginationConfig={'PageSize': 1000}):
+      debug('CommonPrefixes:')
+      debug(repr(page.get('CommonPrefixes')))
+      debug('Contents:')
+      debug(repr(page.get('Contents')))
+
       # Get subdirectories first.
       for obj in page.get('CommonPrefixes') or []:
         obj_name = obj['Prefix']
@@ -1187,9 +1192,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         if not self.partial_match(obj_name, filter_path):
           continue
 
-        if obj_name == filter_path or obj_name == filter_path + '/':
-            # This is not a real file/object, it's just the name of the containing folder. Maybe S3 changed their protocol or something?
-            continue
+        if obj_name[-1:] == '/' and obj['Size'] == 0:
+          # This is not a real file/object, it's a folder. Not sure why this shows up in list of files? Maybe S3 changed their protocol or something?
+          continue
 
         if self.opt.recursive or obj_name.count(PATH_SEP) == filter_path_level:
           debug(filter_path)
