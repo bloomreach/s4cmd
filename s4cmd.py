@@ -1295,14 +1295,15 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       else:
         raise e
 
+  # Adam G: fix here copied from https://github.com/bloomreach/s4cmd/issues/78 (dsync would fail on uploading empty files)
   @log_calls
   def read_file_chunk(self, source, pos, chunk):
-    '''Read local file cunks'''
+    '''Read local file chunks'''
     data = None
     with open(source, 'rb') as f:
       f.seek(pos)
       data = f.read(chunk)
-    if not data:
+    if not f:
       raise Failure('Unable to read data from source: %s' % source)
     return StringIO(data)
 
