@@ -1285,7 +1285,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
   @log_calls
   def read_file_chunk(self, source, pos, chunk):
-    '''Read local file cunks'''
+    '''Read local file chunk'''
     if chunk==0:
         return StringIO()
     data = None
@@ -1361,7 +1361,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
   @log_calls
   def write_file_chunk(self, target, pos, chunk, body):
-    '''Write local file cunks'''
+    '''Write local file chunk'''
     fd = os.open(target, os.O_CREAT | os.O_WRONLY)
     try:
       os.lseek(fd, pos, os.SEEK_SET)
