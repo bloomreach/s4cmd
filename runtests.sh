@@ -41,6 +41,7 @@ function initialize {
     dd if=/dev/urandom of=001 bs=$FILESIZE count=2
     dd if=/dev/urandom of=010 bs=$FILESIZE count=2
     dd if=/dev/urandom of=101 bs=$FILESIZE count=2
+    touch 011
     chmod 700 001
     chmod 770 010
     chmod 707 101
@@ -170,6 +171,25 @@ function case1-2 {
 
   md5sum source/001 | cut -f1 -d' ' >> $CASE_ID.md5
   md5sum $CASE_ID/001-1 | cut -f1 -d' ' >> $CASE_ID.chk
+  result=$(diff $CASE_ID.md5 $CASE_ID.chk)
+  if [[ -z "$result" ]]; then
+    echo "  - OK"
+  else
+    echo "  - Failed"
+  fi
+}
+
+function case1-3 {
+  #####################################################################
+  CASE_ID=${FUNCNAME[0]}
+  echo "Test $CASE_ID: Empty file upload/download"
+  #####################################################################
+  mkdir $CASE_ID
+  $S4CMD put ${S4CMD_OPTS} source/011 $REMOTEDIR/$CASE_ID/011 >> $CASE_ID.log 2>&1
+  $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID/011 $CASE_ID/011 >> $CASE_ID.log 2>&1
+
+  md5sum source/011 | cut -f1 -d' ' >> $CASE_ID.md5
+  md5sum $CASE_ID/011 | cut -f1 -d' ' >> $CASE_ID.chk
   result=$(diff $CASE_ID.md5 $CASE_ID.chk)
   if [[ -z "$result" ]]; then
     echo "  - OK"
