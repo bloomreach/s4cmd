@@ -146,8 +146,6 @@ function case1-1 {
   echo "Test $CASE_ID: single file upload/download"
   #####################################################################
   mkdir $CASE_ID
-  echo $S4CMD $REMOTEDIR
-  $S4CMD ls
   $S4CMD put ${S4CMD_OPTS} source/001 $REMOTEDIR/$CASE_ID/001 >> $CASE_ID.log 2>&1
   $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 >> $CASE_ID.log 2>&1
 
