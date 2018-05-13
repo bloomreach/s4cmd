@@ -4,7 +4,7 @@ python:
 install:
 - pip install -r requirements.txt
 script:
-- runtests.sh
+- ./runtests.sh
 env:
   matrix:
   - secure: L9ILJuLDupPCVed+8kb2X/sqDT8DU5zmTjxjKleq/Meet7kDVbgMd+YXDxWyv1hiurhb2WF3xA3voxez377a9nFdIJkx1cuaEOoXD0QxswS2wK5dF2uh4YuLDYQA7mrng8c+/KDtsJapjZ6BTJ5ENoTyUMXN95d+zv1C3dIm20o=
