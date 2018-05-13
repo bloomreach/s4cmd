@@ -1,0 +1,12 @@
+language: python
+python:
+- '2.7'
+install:
+- pip install -r requirements.txt
+script:
+- runtests.sh
+env:
+  matrix:
+  - secure: L9ILJuLDupPCVed+8kb2X/sqDT8DU5zmTjxjKleq/Meet7kDVbgMd+YXDxWyv1hiurhb2WF3xA3voxez377a9nFdIJkx1cuaEOoXD0QxswS2wK5dF2uh4YuLDYQA7mrng8c+/KDtsJapjZ6BTJ5ENoTyUMXN95d+zv1C3dIm20o=
+  - secure: nTeGiH7y0S3hQrZD9tJJsl1ouJhPBIZZ4AfhE9YhF5nYOxOPXLWj1kEtn9Gs4+Y1lvnT7bxwmbGeC1FLJRW4PjU8WUjxrqQhCgAomzNNgMZZkDRyCZ9WFJq3sN/IIF55Z4efk4PO/j3NAb1LNlrhTkefZBZvRtzrDkEKdvjxbIk=
+  - secure: TMXqRY2oW3h6dG7mDysBQev3PWjByc4IrC+C4h6my3qQYRMrQ8EBuicSn9+3TTW0dBed4rv7vFToxMoDLzLE2FzdZTNWI/gZaPguTuUfUQpFion9Mo043BcDoWgcgXQ9P8I5x57ow9q/PF3XgQqMN4MRxZmIm1zq3YTUrCSGwOI=
