@@ -385,9 +385,10 @@ class BotoClient(object):
     if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
       self.client = self.boto3.client('s3',
                                       aws_access_key_id=aws_access_key_id,
-                                      aws_secret_access_key=aws_secret_access_key)
+                                      aws_secret_access_key=aws_secret_access_key,
+                                      endpoint_url=opt.endpoint_url)
     else:
-      self.client = self.boto3.client('s3')
+      self.client = self.boto3.client('s3', endpoint_url=opt.endpoint_url)
 
     # Cache the result so we don't have to recalculate.
     self.legal_params = {}
@@ -1838,6 +1839,9 @@ if __name__ == '__main__':
   parser.add_option(
       '--ignore-empty-source', help='ignore empty source from s3',
       dest='ignore_empty_source', action='store_true', default=False)
+  parser.add_option(
+      '--endpoint-url', help='configure boto3 to use a different s3 endpoint',
+      dest='endpoint_url', type='string', default=None)
   parser.add_option(
       '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
       action='store_true', default=False)

@@ -209,6 +209,9 @@ seconds to sleep between retries
 ##### `-c NUM_THREADS, --num-threads=NUM_THREADS`
 number of concurrent threads
 
+##### `--endpoint-url`
+endpoint url used in boto3 client
+
 ##### `-d, --show-directory`
 show directory instead of its content
 
