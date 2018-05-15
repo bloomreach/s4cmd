@@ -7,7 +7,7 @@ before_install:
 install:
 - pip install -r requirements.txt
 script:
-- "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY REMOTEDIR=$REMOTEDIR ./runtests.sh"
+- "./runtests.sh"
 env:
   global:
   - secure: lVuKT7TFFrWSJiPZ6gcaSmUBC8/tbZbc2L+kNEYyqT8cNyiLn6/YEE+GXVlZ98eXA7UgAqI2xd3b4j3ttERz/AfSEhJCJjcQE+wUlNZizZXudALR0Gx736sBYBC9zktU/Ngz3PnxzfgdfgbRlJRO7oP7JiQvz7DTH/bM21RKBiY=
