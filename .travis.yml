@@ -1,0 +1,15 @@
+language: python
+python:
+- '2.7'
+before_install:
+- sudo apt-get -qq update
+- sudo apt-get install -y tree
+install:
+- pip install -r requirements.txt
+script:
+- "./runtests.sh"
+env:
+  global:
+  - secure: lVuKT7TFFrWSJiPZ6gcaSmUBC8/tbZbc2L+kNEYyqT8cNyiLn6/YEE+GXVlZ98eXA7UgAqI2xd3b4j3ttERz/AfSEhJCJjcQE+wUlNZizZXudALR0Gx736sBYBC9zktU/Ngz3PnxzfgdfgbRlJRO7oP7JiQvz7DTH/bM21RKBiY=
+  - secure: ZvMrcChuDlS1u3PmkxzUnKOkkPrv28l2J8jD0wSXtd4feBFMCTTtvTinPyvOa+gyJEwn5YRM/SE3k9CvVdao5A6EHhYPSKihFPFdYB2k2jfNNDHB83YLKSHa1JiJFK8+35w2MdJDZKDQ1OAUb5jAWup0PAArqYxjNE/BCQGOCLg=
+  - secure: NjV+iU2fi4T/+UVDoKhriqqU1gowmZIyzCwB3gbbaWA/JXC2dstZlne9N2uXvN0BG5UGYM3yEhdtpkDTjUICEdxuj1/EAym45oIRT3ZJ6SaQEpYa7M+jAzcqgHWQUjSJn6hIrD0aVLRSyir8zZTa9rdZks6IJZJFjpzpCctURPw=
