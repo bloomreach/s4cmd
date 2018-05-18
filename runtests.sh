@@ -30,6 +30,7 @@ S4CMD="${PYTHON} $(pwd)/s4cmd.py"
 S4CMD_OPTS=${S4CMD_OPTS:-"--debug"}
 FILESIZE=1M
 TEST_FAILED=false
+USE_MINIO_SERVER=${USE_MINIO_SERVER:-false}
 
 function initialize {
   # Create testing data locally
@@ -812,7 +813,11 @@ function case14 {
   #####################################################################
   mkdir $CASE_ID
   $S4CMD put ${S4CMD_OPTS} source/001 $REMOTEDIR/$CASE_ID//001 >> $CASE_ID.log 2>&1
-  $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID//001 $CASE_ID/001 >> $CASE_ID.log 2>&1
+  if [[ $USE_MINIO_SERVER == true ]]; then
+      $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 >> $CASE_ID.log 2>&1
+  else
+      $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID//001 $CASE_ID/001 >> $CASE_ID.log 2>&1
+  fi
 
   md5sum source/001 | cut -f1 -d' ' >> $CASE_ID.md5
   md5sum $CASE_ID/001 | cut -f1 -d' ' >> $CASE_ID.chk
