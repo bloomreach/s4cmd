@@ -11,10 +11,11 @@ before_install:
 install:
 - pip install -r requirements.txt
 script:
-- "${HOME}"/minio/bin/minio server "${HOME}"/minio/data
+# Export environment variables for s4cmd
+- export S3_SECRET_KEY=aEmMY45evpLAMMhV3GO0c2dI6PfrCqmKEeUuezVJ
+- export S3_ACCESS_KEY=RMG3GO0ANSES38NN2IKS
+- export S4CMD_OPTS="--endpoint-url=http://127.0.0.1:9000"
+# Run minio server in background
+- "${HOME}"/minio/bin/minio server "${HOME}"/minio/data &
 - "./runtests.sh"
-env:
-  global:
-  - secure: lVuKT7TFFrWSJiPZ6gcaSmUBC8/tbZbc2L+kNEYyqT8cNyiLn6/YEE+GXVlZ98eXA7UgAqI2xd3b4j3ttERz/AfSEhJCJjcQE+wUlNZizZXudALR0Gx736sBYBC9zktU/Ngz3PnxzfgdfgbRlJRO7oP7JiQvz7DTH/bM21RKBiY=
-  - secure: ZvMrcChuDlS1u3PmkxzUnKOkkPrv28l2J8jD0wSXtd4feBFMCTTtvTinPyvOa+gyJEwn5YRM/SE3k9CvVdao5A6EHhYPSKihFPFdYB2k2jfNNDHB83YLKSHa1JiJFK8+35w2MdJDZKDQ1OAUb5jAWup0PAArqYxjNE/BCQGOCLg=
-  - secure: NjV+iU2fi4T/+UVDoKhriqqU1gowmZIyzCwB3gbbaWA/JXC2dstZlne9N2uXvN0BG5UGYM3yEhdtpkDTjUICEdxuj1/EAym45oIRT3ZJ6SaQEpYa7M+jAzcqgHWQUjSJn6hIrD0aVLRSyir8zZTa9rdZks6IJZJFjpzpCctURPw=
+- killall minio
