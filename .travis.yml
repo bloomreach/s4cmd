@@ -6,6 +6,7 @@ before_install:
   - sudo apt-get install -y tree
   - mkdir -p "${HOME}"/minio/bin
   - mkdir -p "${HOME}"/minio/data
+  - mkdir -p "${HOME}"/minio/data/miniobucket
   - wget -nc -O "${HOME}"/minio/bin/minio https://dl.minio.io/server/minio/release/linux-amd64/minio
   - chmod +x "${HOME}"/minio/bin/minio
 install:
@@ -17,4 +18,5 @@ script:
   - export S3_SECRET_KEY=miniostorage
   - export S4CMD_OPTS="--endpoint-url=http://127.0.0.1:9000"
   - "${HOME}/minio/bin/minio server ${HOME}/minio/data &"
+  - export REMOTEDIR=s3://miniobucket
   - "./runtests.sh"
