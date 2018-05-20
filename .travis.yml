@@ -18,6 +18,6 @@ script:
   - export S3_SECRET_KEY=miniostorage
   - export S4CMD_OPTS="--endpoint-url=http://127.0.0.1:9000"
   - export USE_MINIO_SERVER=true
-  - "${HOME}/minio/bin/minio server ${HOME}/minio/data &"
+  - "${HOME}/minio/bin/minio server ${HOME}/minio/data &>${HOME}/minio/data/server.log &"
   - export REMOTEDIR=s3://miniobucket
   - "./runtests.sh"
