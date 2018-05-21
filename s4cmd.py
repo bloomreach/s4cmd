@@ -1367,7 +1367,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     try:
       os.lseek(fd, pos, os.SEEK_SET)
       data = body.read(chunk)
-      os.write(fd, data)
+      num_bytes_written = os.write(fd, data)
+      if(num_bytes_written != len(data)):
+        raise RetryFailure('Number of bytes written inconsistent: %s != %s' % (num_bytes_written, sys.getsizeof(data)))
     finally:
       os.close(fd)
 
