@@ -29,6 +29,8 @@ REMOTEDIR=${REMOTEDIR:-"s3://bucket/path"}
 S4CMD="${PYTHON} $(pwd)/s4cmd.py"
 S4CMD_OPTS=${S4CMD_OPTS:-"--debug"}
 FILESIZE=1M
+TEST_FAILED=false
+USE_MINIO_SERVER=${USE_MINIO_SERVER:-false}
 
 function initialize {
   # Create testing data locally
@@ -157,6 +159,7 @@ function case1-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -176,6 +179,7 @@ function case1-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -195,6 +199,7 @@ function case1-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -214,6 +219,7 @@ function case2-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -233,6 +239,7 @@ function case2-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -250,6 +257,7 @@ function case3-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -266,6 +274,7 @@ function case3-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -284,6 +293,7 @@ function case4-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -302,6 +312,7 @@ function case4-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -321,6 +332,7 @@ function case4-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -340,6 +352,7 @@ function case4-4 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -358,6 +371,7 @@ function case5-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -376,6 +390,7 @@ function case5-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -393,6 +408,7 @@ function case6-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -415,6 +431,7 @@ function case6-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -444,6 +461,7 @@ function obsolete_case6-x {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -461,6 +479,7 @@ function case6-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -483,6 +502,7 @@ function case6-4 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -512,6 +532,7 @@ function case6-5 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -531,6 +552,7 @@ function case7-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -550,6 +572,7 @@ function case7-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -570,6 +593,7 @@ function case8-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -590,6 +614,7 @@ function case8-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -610,6 +635,7 @@ function case8-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -630,6 +656,7 @@ function case9-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -650,6 +677,7 @@ function case9-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -670,6 +698,7 @@ function case9-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -686,6 +715,7 @@ function case10-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -702,6 +732,7 @@ function case10-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -733,6 +764,7 @@ function case11 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -750,6 +782,7 @@ function case12 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -769,6 +802,7 @@ function case13 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -779,7 +813,11 @@ function case14 {
   #####################################################################
   mkdir $CASE_ID
   $S4CMD put ${S4CMD_OPTS} source/001 $REMOTEDIR/$CASE_ID//001 >> $CASE_ID.log 2>&1
-  $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID//001 $CASE_ID/001 >> $CASE_ID.log 2>&1
+  if [[ $USE_MINIO_SERVER == true ]]; then
+      $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID/001 $CASE_ID/001 >> $CASE_ID.log 2>&1
+  else
+      $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID//001 $CASE_ID/001 >> $CASE_ID.log 2>&1
+  fi
 
   md5sum source/001 | cut -f1 -d' ' >> $CASE_ID.md5
   md5sum $CASE_ID/001 | cut -f1 -d' ' >> $CASE_ID.chk
@@ -788,6 +826,7 @@ function case14 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -809,3 +848,6 @@ done
 popd > /dev/null
 
 echo "Done testing"
+if [[ $TEST_FAILED == true ]]; then
+    exit 111
+fi
