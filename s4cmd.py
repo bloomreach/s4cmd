@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #
-# Copyright 2012 BloomReach, Inc.
+# Copyright 2012-2018 BloomReach, Inc.
 # Portions Copyright 2014 Databricks
 #
 # Licensed under the Apache License, Version 2.0 (the "License");

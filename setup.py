@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #
-# Copyright 2012 BloomReach, Inc.
+# Copyright 2012-2018 BloomReach, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,10 +25,10 @@ from setuptools import setup, find_packages
 from setuptools.command.install import install as _install
 
 __author__ = "Chou-han Yang"
-__copyright__ = "Copyright 2014 BloomReach, Inc."
+__copyright__ = "Copyright 2012-2018 BloomReach, Inc."
 __license__ = "http://www.apache.org/licenses/LICENSE-2.0"
 __version__ = "2.1.0"
-__maintainer__ = __author__
+__maintainer__ = "Navin Pai, Naveen Vardhi"
 __status__ = "Development"
 
 def _post_install():
