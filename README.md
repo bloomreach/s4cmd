@@ -3,8 +3,11 @@
 [![Build Status](https://travis-ci.com/bloomreach/s4cmd.svg?branch=master)](https://travis-ci.com/bloomreach/s4cmd) [![Join the chat at https://gitter.im/bloomreach/     s4cmd](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/bloomreach/s4cmd?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 ----
+
 **Author**: Chou-han Yang ([@chouhanyang](https://github.com/chouhanyang))
+
 **Current Maintainers**: Naveen Vardhi ([@rozuur](https://github.com/rozuur)) | Navin Pai ([@navinpai](https://github.com/navinpai))
+
 ----
 
 ## What's New in s4cmd 2.0
