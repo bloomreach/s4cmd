@@ -1809,6 +1809,9 @@ if __name__ == '__main__':
     description='Super S3 command line tool. Version %s' % S4CMD_VERSION)
 
   parser.add_option(
+      '--version', help='print out version of s4cmd', dest='version',
+      action='store_true', default=False)
+  parser.add_option(
       '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
       type='string', default=None)
   parser.add_option(
@@ -1899,21 +1902,24 @@ if __name__ == '__main__':
   env_opts = (shlex.split(os.environ[S4CMD_ENV_KEY]) if S4CMD_ENV_KEY in os.environ else [])
   (opt, args) = parser.parse_args(sys.argv[1:] + env_opts)
   s4cmd_logging.configure(opt)
-
-  # Initalize keys for S3.
-  S3Handler.init_s3_keys(opt)
-  try:
-    CommandHandler(opt).run(args)
-  except InvalidArgument as e:
-    fail('[Invalid Argument] ', exc_info=e)
-  except Failure as e:
-    fail('[Runtime Failure] ', exc_info=e)
-  except BotoClient.NoCredentialsError as e:
-    fail('[Invalid Argument] ', exc_info=e)
-  except BotoClient.BotoError as e:
-    fail('[Boto3Error] %s: %s' % (e.error_code, e.error_message))
-  except Exception as e:
-    fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
+  
+  if opt.version:
+    message('s4cmd version %s' % S4CMD_VERSION)
+  else:
+    # Initalize keys for S3.
+    S3Handler.init_s3_keys(opt)
+    try:
+      CommandHandler(opt).run(args)
+    except InvalidArgument as e:
+      fail('[Invalid Argument] ', exc_info=e)
+    except Failure as e:
+      fail('[Runtime Failure] ', exc_info=e)
+    except BotoClient.NoCredentialsError as e:
+      fail('[Invalid Argument] ', exc_info=e)
+    except BotoClient.BotoError as e:
+      fail('[Boto3Error] %s: %s' % (e.error_code, e.error_message))
+    except Exception as e:
+      fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
 
   clean_tempfiles()
   progress('') # Clear progress message before exit.
