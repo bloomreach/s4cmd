@@ -839,6 +839,8 @@ class S3Handler(object):
       resp = self.s3.create_bucket(Bucket=s3url.bucket)
       if resp['ResponseMetadata']["HTTPStatusCode"] == 200:
         message('Done.')
+      else:
+        raise Failure('Unable to create bucket %s' % source)
 
 
   @log_calls
