@@ -290,6 +290,7 @@ class BotoClient(object):
     'get_paginator',
     'head_object',
     'put_object',
+    'create_bucket',
     'create_multipart_upload',
     'upload_part',
     'complete_multipart_upload',
@@ -827,6 +828,18 @@ class S3Handler(object):
         raise Failure('Target "%s" is not a directory (with a trailing slash).' % target)
 
     pool.join()
+
+  @log_calls
+  def create_bucket(self, source):
+    '''Use the create_bucket API to create a new bucket'''
+    s3url = S3URL(source)
+
+    message('Creating %s', source)
+    if not self.opt.dry_run:
+      resp = self.s3.create_bucket(Bucket=s3url.bucket)
+      if resp['ResponseMetadata']["HTTPStatusCode"] == 200:
+        message('Done.')
+
 
   @log_calls
   def update_privilege(self, obj, target):
@@ -1624,6 +1637,15 @@ class CommandHandler(object):
 
     self.validate('cmd|s3', args)
     self.pretty_print(self.s3handler().s3walk(args[1]))
+
+  @log_calls
+  def mb_handler(self, args):
+    '''Handler for mb command'''
+    if len(args) == 1:
+      raise InvalidArgument('No s3 bucketname provided')
+
+    self.validate('cmd|s3', args)
+    self.s3handler().create_bucket(args[1])
 
   @log_calls
   def put_handler(self, args):
