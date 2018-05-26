@@ -69,15 +69,6 @@ S4CMD_ENV_KEY = "S4CMD_OPTS"
 ## Utility classes
 ##
 
-class Options:
-  '''Default option class for available options. Use the default value from opt parser.
-     The values can be overwritten by command line options or set at run-time.
-  '''
-  def __init__(self, opt=None):
-    parser = get_opt_parser()
-    for o in parser.option_list:
-      self.__dict__[o.dest] = o.default if (opt is None) or (opt.__dict__[o.dest] is None) else opt.__dict__[o.dest]
-
 class Failure(RuntimeError):
   '''Exception for runtime failures'''
   pass
