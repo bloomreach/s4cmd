@@ -9,10 +9,11 @@ before_install:
 - sudo apt-get -qq update
 - sudo apt-get install -y tree
 install:
+- export PIPENV_IGNORE_VIRTUALENVS=1
 - pip install pipenv --upgrade
 - pipenv install --dev --skip-lock
 script:
-- "pipenv shell -c ./runtests.sh"
+- "pipenv run ./runtests.sh"
 env:
   global:
   - secure: irES1orNAMPZiahXTa7mTuBW1vRf2iV1VUowEp4kDRZL94/lxUsivnjNRc2735lHOfUPh2ZVMM9NFiYl9qMxN7LTHjG532pOW4XQPdMyySD1opgg8kbl9+zz9c2hCYXGpUl1sn2IMgohQa+WD71LOyiX8jUoXVio38KtDe4ZB4M=
