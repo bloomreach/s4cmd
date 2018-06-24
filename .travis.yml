@@ -13,6 +13,7 @@ install:
 - pip install pipenv --upgrade
 - pipenv install --dev --skip-lock
 script:
+- export BUILD_ID="$TRAVIS_BUILD_ID"
 - "pipenv run ./runtests.sh"
 env:
   global:
