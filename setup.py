@@ -31,14 +31,9 @@ __version__ = "2.1.0"
 __maintainer__ = "Navin Pai, Naveen Vardhi"
 __status__ = "Development"
 
-def _post_install():
-  os.chmod("/etc/bash_completion.d/s4cmd",755)
-
 class install(_install):
   def run(self):
     _install.run(self)
-    mode = stat.S_IREAD | stat.S_IWRITE | stat.S_IRGRP | stat.S_IROTH
-    os.chmod("/etc/bash_completion.d/s4cmd", mode)
     
 
 setup(name='s4cmd',
@@ -50,6 +45,9 @@ setup(name='s4cmd',
       py_modules=['s4cmd'],
       scripts=['s4cmd', 's4cmd.py'], # Added s4cmd.py as script for backward compatibility
       install_requires=['boto3>=1.3.1', 'pytz>=2016.4'],
-      data_files=[('/etc/bash_completion.d/',['data/bash-completion/s4cmd'])],
+      entry_points={
+        'console_scripts': [
+            's4cmd = s4cmd:main',
+        ]},
       cmdclass={'install': install},
     )
