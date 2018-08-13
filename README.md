@@ -10,7 +10,7 @@
 
 ----
 
-## What's New in s4cmd 2.0
+## What's New in s4cmd 2.x
 
 - Fully migrated from old boto 2.x to new [boto3](http://boto3.readthedocs.io/en/latest/reference/services/s3.html)  library, which provides more reliable and up-to-date S3 backend.
 - Support S3 `--API-ServerSideEncryption` along with **36 new API pass-through options**. See API pass-through options section for complete list.
