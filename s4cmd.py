@@ -48,7 +48,7 @@ else:
 ## Global constants
 ##
 
-S4CMD_VERSION = "2.1.0-alpha"
+S4CMD_VERSION = "2.1.0"
 
 PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
