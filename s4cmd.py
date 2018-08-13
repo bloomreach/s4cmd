@@ -1815,127 +1815,133 @@ class ExtendedOptParser(optparse.Option):
   TYPE_CHECKER['datetime'] = check_datetime
   TYPE_CHECKER['dict'] = check_dict
 
+def main():
+  try:
+      if not sys.argv[0]: sys.argv[0] = ''  # Workaround for running with optparse from egg
+
+      # Parser for command line options.
+      parser = optparse.OptionParser(
+        option_class=ExtendedOptParser,
+        description='Super S3 command line tool. Version %s' % S4CMD_VERSION)
+
+      parser.add_option(
+          '--version', help='print out version of s4cmd', dest='version',
+          action='store_true', default=False)
+      parser.add_option(
+          '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
+          type='string', default=None)
+      parser.add_option(
+          '--access-key', help = 'use access_key for connection to S3', dest = 'access_key',
+          type = 'string', default = None)
+      parser.add_option(
+          '--secret-key', help = 'use security key for connection to S3', dest = 'secret_key',
+          type = 'string', default = None)
+      parser.add_option(
+          '-f', '--force', help='force overwrite files when download or upload',
+          dest='force', action='store_true', default=False)
+      parser.add_option(
+          '-r', '--recursive', help='recursively checking subdirectories',
+          dest='recursive', action='store_true', default=False)
+      parser.add_option(
+          '-s', '--sync-check', help='check file md5 before download or upload',
+          dest='sync_check', action='store_true', default=False)
+      parser.add_option(
+          '-n', '--dry-run', help='trial run without actual download or upload',
+          dest='dry_run', action='store_true', default=False)
+      parser.add_option(
+          '-t', '--retry', help='number of retries before giving up',
+          dest='retry', type=int, default=3)
+      parser.add_option(
+          '--retry-delay', help='seconds to sleep between retries',
+          type=int, default=10)
+      parser.add_option(
+          '-c', '--num-threads', help='number of concurrent threads',
+          type=int, default=get_default_thread_count())
+      parser.add_option(
+          '-d', '--show-directory', help='show directory instead of its content',
+          dest='show_dir', action='store_true', default=False)
+      parser.add_option(
+          '--ignore-empty-source', help='ignore empty source from s3',
+          dest='ignore_empty_source', action='store_true', default=False)
+      parser.add_option(
+          '--endpoint-url', help='configure boto3 to use a different s3 endpoint',
+          dest='endpoint_url', type='string', default=None)
+      parser.add_option(
+          '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
+          action='store_true', default=False)
+      parser.add_option(
+          '--verbose', help='verbose output', dest='verbose',
+          action='store_true', default=False)
+      parser.add_option(
+          '--debug', help='debug output', dest='debug',
+          action='store_true', default=False)
+      parser.add_option(
+          '--validate', help='(obsolete) validate lookup operation', dest='validate',
+          action='store_true', default=False)
+      parser.add_option(
+          '-D', '--delete-removed',
+          help='delete remote files that do not exist in source after sync',
+          dest='delete_removed', action='store_true', default=False)
+      parser.add_option(
+          '--multipart-split-size',
+          help='size in bytes to split multipart transfers', type=int,
+          default=50 * 1024 * 1024)
+      parser.add_option(
+          '--max-singlepart-download-size',
+          help='files with size (in bytes) greater than this will be downloaded in '
+          'multipart transfers', type=int, default=50 * 1024 * 1024)
+      parser.add_option(
+          '--max-singlepart-upload-size',
+          help='files with size (in bytes) greater than this will be uploaded in '
+          'multipart transfers', type=int, default=4500 * 1024 * 1024)
+      parser.add_option(
+          '--max-singlepart-copy-size',
+          help='files with size (in bytes) greater than this will be copied in '
+          'multipart transfers', type=int, default=100 * 1024 * 1024)
+      parser.add_option(
+          '--batch-delete-size',
+          help='Number of files (<1000) to be combined in batch delete.',
+          type=int, default=1000)
+      parser.add_option(
+          '--last-modified-before',
+          help='Condition on files where their last modified dates are before given parameter.',
+          type='datetime', default=None)
+      parser.add_option(
+          '--last-modified-after',
+          help='Condition on files where their last modified dates are after given parameter.',
+          type='datetime', default=None)
+
+      # Extra S3 API arguments
+      BotoClient.add_options(parser)
+
+      # Combine parameters from environment variable. This is useful for global settings.
+      env_opts = (shlex.split(os.environ[S4CMD_ENV_KEY]) if S4CMD_ENV_KEY in os.environ else [])
+      (opt, args) = parser.parse_args(sys.argv[1:] + env_opts)
+      s4cmd_logging.configure(opt)
+
+      if opt.version:
+        message('s4cmd version %s' % S4CMD_VERSION)
+      else:
+        # Initalize keys for S3.
+        S3Handler.init_s3_keys(opt)
+        try:
+          CommandHandler(opt).run(args)
+        except InvalidArgument as e:
+          fail('[Invalid Argument] ', exc_info=e)
+        except Failure as e:
+          fail('[Runtime Failure] ', exc_info=e)
+        except BotoClient.NoCredentialsError as e:
+          fail('[Invalid Argument] ', exc_info=e)
+        except BotoClient.BotoError as e:
+          fail('[Boto3Error] %s: %s' % (e.error_code, e.error_message))
+        except Exception as e:
+          fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
+
+      clean_tempfiles()
+      progress('') # Clear progress message before exit.
+  except Exception:
+      if not opt.verbose:
+        sys.exit(1)
+
 if __name__ == '__main__':
-  if not sys.argv[0]: sys.argv[0] = ''  # Workaround for running with optparse from egg
-
-  # Parser for command line options.
-  parser = optparse.OptionParser(
-    option_class=ExtendedOptParser,
-    description='Super S3 command line tool. Version %s' % S4CMD_VERSION)
-
-  parser.add_option(
-      '--version', help='print out version of s4cmd', dest='version',
-      action='store_true', default=False)
-  parser.add_option(
-      '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
-      type='string', default=None)
-  parser.add_option(
-      '--access-key', help = 'use access_key for connection to S3', dest = 'access_key',
-      type = 'string', default = None)
-  parser.add_option(
-      '--secret-key', help = 'use security key for connection to S3', dest = 'secret_key',
-      type = 'string', default = None)
-  parser.add_option(
-      '-f', '--force', help='force overwrite files when download or upload',
-      dest='force', action='store_true', default=False)
-  parser.add_option(
-      '-r', '--recursive', help='recursively checking subdirectories',
-      dest='recursive', action='store_true', default=False)
-  parser.add_option(
-      '-s', '--sync-check', help='check file md5 before download or upload',
-      dest='sync_check', action='store_true', default=False)
-  parser.add_option(
-      '-n', '--dry-run', help='trial run without actual download or upload',
-      dest='dry_run', action='store_true', default=False)
-  parser.add_option(
-      '-t', '--retry', help='number of retries before giving up',
-      dest='retry', type=int, default=3)
-  parser.add_option(
-      '--retry-delay', help='seconds to sleep between retries',
-      type=int, default=10)
-  parser.add_option(
-      '-c', '--num-threads', help='number of concurrent threads',
-      type=int, default=get_default_thread_count())
-  parser.add_option(
-      '-d', '--show-directory', help='show directory instead of its content',
-      dest='show_dir', action='store_true', default=False)
-  parser.add_option(
-      '--ignore-empty-source', help='ignore empty source from s3',
-      dest='ignore_empty_source', action='store_true', default=False)
-  parser.add_option(
-      '--endpoint-url', help='configure boto3 to use a different s3 endpoint',
-      dest='endpoint_url', type='string', default=None)
-  parser.add_option(
-      '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
-      action='store_true', default=False)
-  parser.add_option(
-      '--verbose', help='verbose output', dest='verbose',
-      action='store_true', default=False)
-  parser.add_option(
-      '--debug', help='debug output', dest='debug',
-      action='store_true', default=False)
-  parser.add_option(
-      '--validate', help='(obsolete) validate lookup operation', dest='validate',
-      action='store_true', default=False)
-  parser.add_option(
-      '-D', '--delete-removed',
-      help='delete remote files that do not exist in source after sync',
-      dest='delete_removed', action='store_true', default=False)
-  parser.add_option(
-      '--multipart-split-size',
-      help='size in bytes to split multipart transfers', type=int,
-      default=50 * 1024 * 1024)
-  parser.add_option(
-      '--max-singlepart-download-size',
-      help='files with size (in bytes) greater than this will be downloaded in '
-      'multipart transfers', type=int, default=50 * 1024 * 1024)
-  parser.add_option(
-      '--max-singlepart-upload-size',
-      help='files with size (in bytes) greater than this will be uploaded in '
-      'multipart transfers', type=int, default=4500 * 1024 * 1024)
-  parser.add_option(
-      '--max-singlepart-copy-size',
-      help='files with size (in bytes) greater than this will be copied in '
-      'multipart transfers', type=int, default=100 * 1024 * 1024)
-  parser.add_option(
-      '--batch-delete-size',
-      help='Number of files (<1000) to be combined in batch delete.',
-      type=int, default=1000)
-  parser.add_option(
-      '--last-modified-before',
-      help='Condition on files where their last modified dates are before given parameter.',
-      type='datetime', default=None)
-  parser.add_option(
-      '--last-modified-after',
-      help='Condition on files where their last modified dates are after given parameter.',
-      type='datetime', default=None)
-
-  # Extra S3 API arguments
-  BotoClient.add_options(parser)
-
-  # Combine parameters from environment variable. This is useful for global settings.
-  env_opts = (shlex.split(os.environ[S4CMD_ENV_KEY]) if S4CMD_ENV_KEY in os.environ else [])
-  (opt, args) = parser.parse_args(sys.argv[1:] + env_opts)
-  s4cmd_logging.configure(opt)
-  
-  if opt.version:
-    message('s4cmd version %s' % S4CMD_VERSION)
-  else:
-    # Initalize keys for S3.
-    S3Handler.init_s3_keys(opt)
-    try:
-      CommandHandler(opt).run(args)
-    except InvalidArgument as e:
-      fail('[Invalid Argument] ', exc_info=e)
-    except Failure as e:
-      fail('[Runtime Failure] ', exc_info=e)
-    except BotoClient.NoCredentialsError as e:
-      fail('[Invalid Argument] ', exc_info=e)
-    except BotoClient.BotoError as e:
-      fail('[Boto3Error] %s: %s' % (e.error_code, e.error_message))
-    except Exception as e:
-      fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
-
-  clean_tempfiles()
-  progress('') # Clear progress message before exit.
-
+  main()
