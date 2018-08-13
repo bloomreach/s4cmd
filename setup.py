@@ -20,7 +20,7 @@
 Super S3 command line tool, setup.py
 """
 
-import os, stat
+import os, stat, path
 from setuptools import setup, find_packages
 from setuptools.command.install import install as _install
 
@@ -31,16 +31,21 @@ __version__ = "2.1.0"
 __maintainer__ = "Navin Pai, Naveen Vardhi"
 __status__ = "Development"
 
+this_directory = path.abspath(path.dirname(__file__))
+with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+  long_description = f.read()
+
 class install(_install):
   def run(self):
     _install.run(self)
     
-
 setup(name='s4cmd',
       version=__version__,
       description='Super S3 command line tool',
       author=__author__,
       license=__license__,
+      long_description=long_description,
+      long_description_content_type='text/markdown'
       url='https://github.com/bloomreach/s4cmd',
       py_modules=['s4cmd'],
       scripts=['s4cmd.py'], # Added s4cmd.py as script for backward compatibility
