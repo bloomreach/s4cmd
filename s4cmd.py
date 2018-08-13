@@ -1939,7 +1939,7 @@ def main():
 
       clean_tempfiles()
       progress('') # Clear progress message before exit.
-  except:
+  except Exception:
       if not opt.verbose:
         sys.exit(1)
 
