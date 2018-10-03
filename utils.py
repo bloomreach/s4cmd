@@ -1,6 +1,4 @@
 # Thanks baboon project for the code.
-import subprocess
-
 
 def cmp_to_key(mycmp):
   """ Converts a cmp= function into a key= function.
