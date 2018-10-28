@@ -216,7 +216,7 @@ number of concurrent threads
 ##### `--endpoint-url`
 endpoint url used in boto3 client
 
-Note: it may be necessary to set the `AWS_DEFAULT_REGION` environment variable.
+Note: it may be necessary to set the [`AWS_DEFAULT_REGION`](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#environment-variable-configuration) environment variable.
 
 ##### `-d, --show-directory`
 show directory instead of its content
