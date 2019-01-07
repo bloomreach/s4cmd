@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #
-# Copyright 2012 BloomReach, Inc.
+# Copyright 2012-2018 BloomReach, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,31 +25,34 @@ from setuptools import setup, find_packages
 from setuptools.command.install import install as _install
 
 __author__ = "Chou-han Yang"
-__copyright__ = "Copyright 2014 BloomReach, Inc."
+__copyright__ = "Copyright 2012-2018 BloomReach, Inc."
 __license__ = "http://www.apache.org/licenses/LICENSE-2.0"
-__version__ = "2.2.0"
-__maintainer__ = __author__
+__version__ = "2.1.0"
+__maintainer__ = "Navin Pai, Naveen Vardhi"
 __status__ = "Development"
 
-def _post_install():
-  os.chmod("/etc/bash_completion.d/s4cmd",755)
+this_directory = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(this_directory, 'README.md')) as f:
+  long_description = f.read()
 
 class install(_install):
   def run(self):
     _install.run(self)
-    mode = stat.S_IREAD | stat.S_IWRITE | stat.S_IRGRP | stat.S_IROTH
-    os.chmod("/etc/bash_completion.d/s4cmd", mode)
     
-
 setup(name='s4cmd',
       version=__version__,
       description='Super S3 command line tool',
       author=__author__,
       license=__license__,
+      long_description=long_description,
+      long_description_content_type='text/markdown',
       url='https://github.com/bloomreach/s4cmd',
       py_modules=['s4cmd'],
-      scripts=['s4cmd', 's4cmd.py'], # Added s4cmd.py as script for backward compatibility
+      scripts=['s4cmd.py'], # Added s4cmd.py as script for backward compatibility
       install_requires=['boto3>=1.3.1', 'pytz>=2016.4'],
-      data_files=[('/etc/bash_completion.d/',['data/bash-completion/s4cmd'])],
+      entry_points={
+        'console_scripts': [
+            's4cmd = s4cmd:main',
+        ]},
       cmdclass={'install': install},
     )

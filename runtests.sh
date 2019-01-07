@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# Copyright 2012 BloomReach, Inc.
+# Copyright 2012-2018 BloomReach, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,12 +23,14 @@
 # Python settings, can be python 2 or 3
 PYTHON=${PYTHON:-python}
 PYTHONPATH=${PYTHONPATH:-$(pwd)}
-
+BUILD_ID=${BUILD_ID:-0}
 LOCALDIR=./test-tmp
 REMOTEDIR=${REMOTEDIR:-"s3://bucket/path"}
+REMOTEDIR="${REMOTEDIR}/${BUILD_ID}/$(${PYTHON} --version 2>&1 | cut -d' ' -f 2)"
 S4CMD="${PYTHON} $(pwd)/s4cmd.py"
 S4CMD_OPTS=${S4CMD_OPTS:-"--debug"}
 FILESIZE=1M
+TEST_FAILED=false
 
 function initialize {
   # Create testing data locally
@@ -41,6 +43,7 @@ function initialize {
     dd if=/dev/urandom of=001 bs=$FILESIZE count=2
     dd if=/dev/urandom of=010 bs=$FILESIZE count=2
     dd if=/dev/urandom of=101 bs=$FILESIZE count=2
+    touch 011
     chmod 700 001
     chmod 770 010
     chmod 707 101
@@ -156,6 +159,7 @@ function case1-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -175,6 +179,27 @@ function case1-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
+  fi
+}
+
+function case1-3 {
+  #####################################################################
+  CASE_ID=${FUNCNAME[0]}
+  echo "Test $CASE_ID: Empty file upload/download"
+  #####################################################################
+  mkdir $CASE_ID
+  $S4CMD put ${S4CMD_OPTS} source/011 $REMOTEDIR/$CASE_ID/011 >> $CASE_ID.log 2>&1
+  $S4CMD get ${S4CMD_OPTS} $REMOTEDIR/$CASE_ID/011 $CASE_ID/011 >> $CASE_ID.log 2>&1
+
+  md5sum source/011 | cut -f1 -d' ' >> $CASE_ID.md5
+  md5sum $CASE_ID/011 | cut -f1 -d' ' >> $CASE_ID.chk
+  result=$(diff $CASE_ID.md5 $CASE_ID.chk)
+  if [[ -z "$result" ]]; then
+    echo "  - OK"
+  else
+    echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -194,6 +219,7 @@ function case2-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -213,6 +239,7 @@ function case2-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -230,6 +257,7 @@ function case3-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -246,6 +274,7 @@ function case3-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -264,6 +293,7 @@ function case4-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -282,6 +312,7 @@ function case4-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -301,6 +332,7 @@ function case4-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -320,6 +352,7 @@ function case4-4 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -338,6 +371,7 @@ function case5-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -356,6 +390,7 @@ function case5-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -373,6 +408,7 @@ function case6-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -395,6 +431,7 @@ function case6-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -424,6 +461,7 @@ function obsolete_case6-x {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -441,6 +479,7 @@ function case6-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -463,6 +502,7 @@ function case6-4 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -492,6 +532,7 @@ function case6-5 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -511,6 +552,7 @@ function case7-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -530,6 +572,7 @@ function case7-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -550,6 +593,7 @@ function case8-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -570,6 +614,7 @@ function case8-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -590,6 +635,7 @@ function case8-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -610,6 +656,7 @@ function case9-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -630,6 +677,7 @@ function case9-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -650,6 +698,7 @@ function case9-3 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -666,6 +715,7 @@ function case10-1 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -682,6 +732,7 @@ function case10-2 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -713,6 +764,7 @@ function case11 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -730,6 +782,7 @@ function case12 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -749,6 +802,7 @@ function case13 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -768,6 +822,7 @@ function case14 {
     echo "  - OK"
   else
     echo "  - Failed"
+    TEST_FAILED=true
   fi
 }
 
@@ -780,7 +835,9 @@ else
   TEST_CASES="$*"
 fi
 
+echo 'Initializing...'
 initialize > /dev/null 2>&1
+echo "Executing test cases with $(python --version)"
 pushd $LOCALDIR > /dev/null
 for case in $TEST_CASES
 do
@@ -789,3 +846,6 @@ done
 popd > /dev/null
 
 echo "Done testing"
+if [[ $TEST_FAILED == true ]]; then
+    exit 111
+fi

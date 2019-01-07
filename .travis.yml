@@ -1,0 +1,22 @@
+language: python
+python:
+# - '2.6' Need to fix
+- '2.7'
+- '3.4'
+- '3.5'
+- '3.6'
+before_install:
+- sudo apt-get -qq update
+- sudo apt-get install -y tree
+install:
+- export PIPENV_IGNORE_VIRTUALENVS=1
+- pip install pipenv --upgrade
+- pipenv install --dev --skip-lock
+script:
+- export BUILD_ID="$TRAVIS_BUILD_ID"
+- "pipenv run ./runtests.sh"
+env:
+  global:
+  - secure: irES1orNAMPZiahXTa7mTuBW1vRf2iV1VUowEp4kDRZL94/lxUsivnjNRc2735lHOfUPh2ZVMM9NFiYl9qMxN7LTHjG532pOW4XQPdMyySD1opgg8kbl9+zz9c2hCYXGpUl1sn2IMgohQa+WD71LOyiX8jUoXVio38KtDe4ZB4M=
+  - secure: Pf/z0k5E5e5d2KPKUKOxV6sXWv5vggRrswTZiN8mu9fv3QDpwKXQ3tBcTjmwRt76I6G8Vg1ugNcZRY4I0Dk0wmirM1KRxmRXSXFTtT89vrqezg1GeAy3Ffu7DPb0pH858om2QvVDAcLcMsqiXq/Hn62bjig+dd2MLbdWg2DhYvU=
+  - secure: OQkYDl8R5cHl2HJrEhSFycSGybF9vdL19tG591rlLuKE/+WgRVa486qexlceWr1AkTjNawLLOhaomxnuCVzBO/sFdA1XdeCHQRCOXytfCJEHEYNNKcjLVYIw+roAOVeBHWQq7F4loyBDS1sVS6gb2rOsyb/wLCy3hJQ/gJQUhbY=

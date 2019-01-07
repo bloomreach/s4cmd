@@ -1,23 +1,27 @@
 # s4cmd
-
-[![Join the chat at https://gitter.im/bloomreach/s4cmd](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/bloomreach/s4cmd?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-
 ### Super S3 command line tool
+[![Build Status](https://travis-ci.com/bloomreach/s4cmd.svg?branch=master)](https://travis-ci.com/bloomreach/s4cmd) [![Join the chat at https://gitter.im/bloomreach/     s4cmd](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/bloomreach/s4cmd?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-Chou-han Yang
-2016-05-01 (covers s4cmd version 2.0.0)
+----
 
-## What's New in s4cmd 2.0
+**Author**: Chou-han Yang ([@chouhanyang](https://github.com/chouhanyang))
+
+**Current Maintainers**: Naveen Vardhi ([@rozuur](https://github.com/rozuur)) | Navin Pai ([@navinpai](https://github.com/navinpai))
+
+----
+
+## What's New in s4cmd 2.x
 
 - Fully migrated from old boto 2.x to new [boto3](http://boto3.readthedocs.io/en/latest/reference/services/s3.html)  library, which provides more reliable and up-to-date S3 backend.
 - Support S3 `--API-ServerSideEncryption` along with **36 new API pass-through options**. See API pass-through options section for complete list.
 - Support batch delete (with delete_objects API) to delete up to 1000 files with single call. **100+ times faster** than sequential deletion.
-- Support `S4CMD_OPTS` environment variable for commonly used options such as `--API-ServerSideEncryption` aross all your s4cmd operations.
+- Support `S4CMD_OPTS` environment variable for commonly used options such as `--API-ServerSideEncryption` across all your s4cmd operations.
 - Support moving files **larger than 5GB** with multipart upload. **20+ times faster** then sequential move operation when moving large files.
 - Support timestamp filtering with `--last-modified-before` and `--last-modified-after` options for all operations. Human friendly timestamps are supported, e.g. `--last-modified-before='2 months ago'`
 - Faster upload with lazy evaluation of md5 hash.
 - Listing large number of files with S3 pagination, with memory is the limit.
-- New directory to directory `dsync` command is better and standalone implementation to replace old `sync` command, which is implemented based on top of get/put/mv commands. `--delete-removed` work for all cases including local to s3, s3 to local, and a3 to s3. `sync` command preserves the old behavior in this version for compatibility.
+- New directory to directory `dsync` command is better and standalone implementation to replace old `sync` command, which is implemented based on top of get/put/mv commands. `--delete-removed` work for all cases including local to s3, s3 to local, and s3 to s3. `sync` command preserves the old behavior in this version for compatibility.
+- [Support for S3 compatible storage services](https://github.com/bloomreach/s4cmd/issues/52) such as DreamHost and Cloudian using `--endpoint-url` (Community Supported Beta Feature). 
 - Tested on both python 2 and 3.
 - Special thanks to [onera.com](http://www.onera.com) for supporting s4cmd.
 
@@ -97,6 +101,8 @@ a single file!)
 - If you already have a `~/.s3cfg` file from configuring `s3cmd`, credentials
 from this file will be used.  Otherwise, set the `S3_ACCESS_KEY` and
 `S3_SECRET_KEY` environment variables to contain your S3 credentials.
+- If no keys are provided, but an IAM role is associated with the EC2 instance, it will
+be used transparently.
 
 
 ## s4cmd Commands
@@ -207,6 +213,9 @@ seconds to sleep between retries
 ##### `-c NUM_THREADS, --num-threads=NUM_THREADS`
 number of concurrent threads
 
+##### `--endpoint-url`
+endpoint url used in boto3 client
+
 ##### `-d, --show-directory`
 show directory instead of its content
 
@@ -257,7 +266,7 @@ after given parameter.
 
 ## S3 API Pass-through Options
 
-Those options are directly translated to boto3 API commands. The options provided will be filtered by the APIs that are taking parameters. For example, `--API-ServerSideEncryption` is only needed for `put_object`, `create_multipart_upload` but not for `list_buckets` and `get_objects` for exmple. Therefore, providing `--API-ServerSideEncryption` for `s4cmd ls` has no effect.
+Those options are directly translated to boto3 API commands. The options provided will be filtered by the APIs that are taking parameters. For example, `--API-ServerSideEncryption` is only needed for `put_object`, `create_multipart_upload` but not for `list_buckets` and `get_objects` for example. Therefore, providing `--API-ServerSideEncryption` for `s4cmd ls` has no effect.
 
 For more information, please see boto3 s3 documentations http://boto3.readthedocs.io/en/latest/reference/services/s3.html
 

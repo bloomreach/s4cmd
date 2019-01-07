@@ -1,3 +1,6 @@
+s4cmd_env/
+test-tmp/
+
 *.py[co]
 
 # Packages

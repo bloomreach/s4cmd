@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #
-# Copyright 2012 BloomReach, Inc.
+# Copyright 2012-2018 BloomReach, Inc.
 # Portions Copyright 2014 Databricks
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,14 +39,17 @@ else:
   def cmp(a, b):
     return (a > b) - (a < b)
 
-from functools import cmp_to_key
-
+if sys.version_info < (2, 7):
+  # Python < 2.7 doesn't have the cmp_to_key function.
+  from utils import cmp_to_key
+else:
+  from functools import cmp_to_key
 
 ##
 ## Global constants
 ##
 
-S4CMD_VERSION = "2.0.1"
+S4CMD_VERSION = "2.1.0"
 
 PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
@@ -67,15 +70,6 @@ EDITOR = os.environ.get('EDITOR', 'vim')
 ##
 ## Utility classes
 ##
-
-class Options:
-  '''Default option class for available options. Use the default value from opt parser.
-     The values can be overwritten by command line options or set at run-time.
-  '''
-  def __init__(self, opt=None):
-    parser = get_opt_parser()
-    for o in parser.option_list:
-      self.__dict__[o.dest] = o.default if (opt is None) or (opt.__dict__[o.dest] is None) else opt.__dict__[o.dest]
 
 class Failure(RuntimeError):
   '''Exception for runtime failures'''
@@ -277,6 +271,7 @@ class BotoClient(object):
   # Exported exceptions.
   BotoError = boto3.exceptions.Boto3Error
   ClientError = botocore.exceptions.ClientError
+  NoCredentialsError = botocore.exceptions.NoCredentialsError
 
   # Exceptions that retries may work. May change in the future.
   S3RetryableErrors = (
@@ -292,6 +287,7 @@ class BotoClient(object):
     'get_paginator',
     'head_object',
     'put_object',
+    'create_bucket',
     'create_multipart_upload',
     'upload_part',
     'complete_multipart_upload',
@@ -390,9 +386,10 @@ class BotoClient(object):
     if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
       self.client = self.boto3.client('s3',
                                       aws_access_key_id=aws_access_key_id,
-                                      aws_secret_access_key=aws_secret_access_key)
+                                      aws_secret_access_key=aws_secret_access_key,
+                                      endpoint_url=opt.endpoint_url)
     else:
-      self.client = self.boto3.client('s3')
+      self.client = self.boto3.client('s3', endpoint_url=opt.endpoint_url)
 
     # Cache the result so we don't have to recalculate.
     self.legal_params = {}
@@ -828,6 +825,20 @@ class S3Handler(object):
         raise Failure('Target "%s" is not a directory (with a trailing slash).' % target)
 
     pool.join()
+
+  @log_calls
+  def create_bucket(self, source):
+    '''Use the create_bucket API to create a new bucket'''
+    s3url = S3URL(source)
+
+    message('Creating %s', source)
+    if not self.opt.dry_run:
+      resp = self.s3.create_bucket(Bucket=s3url.bucket)
+      if resp['ResponseMetadata']["HTTPStatusCode"] == 200:
+        message('Done.')
+      else:
+        raise Failure('Unable to create bucket %s' % source)
+
 
   @log_calls
   def update_privilege(self, obj, target):
@@ -1290,7 +1301,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
   @log_calls
   def read_file_chunk(self, source, pos, chunk):
-    '''Read local file cunks'''
+    '''Read local file chunk'''
+    if chunk==0:
+        return StringIO()
     data = None
     with open(source, 'rb') as f:
       f.seek(pos)
@@ -1364,12 +1377,14 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
   @log_calls
   def write_file_chunk(self, target, pos, chunk, body):
-    '''Write local file cunks'''
+    '''Write local file chunk'''
     fd = os.open(target, os.O_CREAT | os.O_WRONLY)
     try:
       os.lseek(fd, pos, os.SEEK_SET)
       data = body.read(chunk)
-      os.write(fd, data)
+      num_bytes_written = os.write(fd, data)
+      if(num_bytes_written != len(data)):
+        raise RetryFailure('Number of bytes written inconsistent: %s != %s' % (num_bytes_written, sys.getsizeof(data)))
     finally:
       os.close(fd)
 
@@ -1623,6 +1638,15 @@ class CommandHandler(object):
     self.pretty_print(self.s3handler().s3walk(args[1]))
 
   @log_calls
+  def mb_handler(self, args):
+    '''Handler for mb command'''
+    if len(args) == 1:
+      raise InvalidArgument('No s3 bucketname provided')
+
+    self.validate('cmd|s3', args)
+    self.s3handler().create_bucket(args[1])
+
+  @log_calls
   def put_handler(self, args):
     '''Handler for put command'''
 
@@ -1824,169 +1848,133 @@ class ExtendedOptParser(optparse.Option):
   TYPE_CHECKER['datetime'] = check_datetime
   TYPE_CHECKER['dict'] = check_dict
 
-if __name__ == '__main__':
-  if not sys.argv[0]: sys.argv[0] = ''  # Workaround for running with optparse from egg
-
-  # Parser for command line options.
-  parser = optparse.OptionParser(
-    option_class=ExtendedOptParser,
-    description='Super S3 command line tool. Version %s' % S4CMD_VERSION)
-
-  parser.add_option(
-      '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
-      type='string', default=None)
-  parser.add_option(
-      '--access-key', help = 'use access_key for connection to S3', dest = 'access_key',
-      type = 'string', default = None)
-  parser.add_option(
-      '--secret-key', help = 'use security key for connection to S3', dest = 'secret_key',
-      type = 'string', default = None)
-  parser.add_option(
-      '-f', '--force', help='force overwrite files when download or upload',
-      dest='force', action='store_true', default=False)
-  parser.add_option(
-      '-r', '--recursive', help='recursively checking subdirectories',
-      dest='recursive', action='store_true', default=False)
-  parser.add_option(
-      '-s', '--sync-check', help='check file md5 before download or upload',
-      dest='sync_check', action='store_true', default=False)
-  parser.add_option(
-      '-n', '--dry-run', help='trial run without actual download or upload',
-      dest='dry_run', action='store_true', default=False)
-  parser.add_option(
-      '-t', '--retry', help='number of retries before giving up',
-      dest='retry', type=int, default=3)
-  parser.add_option(
-      '--retry-delay', help='seconds to sleep between retries',
-      type=int, default=10)
-  parser.add_option(
-      '-c', '--num-threads', help='number of concurrent threads',
-      type=int, default=get_default_thread_count())
-  parser.add_option(
-      '-d', '--show-directory', help='show directory instead of its content',
-      dest='show_dir', action='store_true', default=False)
-  parser.add_option(
-      '--ignore-empty-source', help='ignore empty source from s3',
-      dest='ignore_empty_source', action='store_true', default=False)
-  parser.add_option(
-      '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
-      action='store_true', default=False)
-  parser.add_option(
-      '--verbose', help='verbose output', dest='verbose',
-      action='store_true', default=False)
-  parser.add_option(
-      '--debug', help='debug output', dest='debug',
-      action='store_true', default=False)
-  parser.add_option(
-      '--validate', help='(obsolete) validate lookup operation', dest='validate',
-      action='store_true', default=False)
-  parser.add_option(
-      '-D', '--delete-removed',
-      help='delete remote files that do not exist in source after sync',
-      dest='delete_removed', action='store_true', default=False)
-  parser.add_option(
-      '--multipart-split-size',
-      help='size in bytes to split multipart transfers', type=int,
-      default=50 * 1024 * 1024)
-  parser.add_option(
-      '--max-singlepart-download-size',
-      help='files with size (in bytes) greater than this will be downloaded in '
-      'multipart transfers', type=int, default=50 * 1024 * 1024)
-  parser.add_option(
-      '--max-singlepart-upload-size',
-      help='files with size (in bytes) greater than this will be uploaded in '
-      'multipart transfers', type=int, default=4500 * 1024 * 1024)
-  parser.add_option(
-      '--max-singlepart-copy-size',
-      help='files with size (in bytes) greater than this will be copied in '
-      'multipart transfers', type=int, default=100 * 1024 * 1024)
-  parser.add_option(
-      '--batch-delete-size',
-      help='Number of files (<1000) to be combined in batch delete.',
-      type=int, default=1000)
-  parser.add_option(
-      '--last-modified-before',
-      help='Condition on files where their last modified dates are before given parameter.',
-      type='datetime', default=None)
-  parser.add_option(
-      '--last-modified-after',
-      help='Condition on files where their last modified dates are after given parameter.',
-      type='datetime', default=None)
-
-  # Extra S3 API arguments
-  BotoClient.add_options(parser)
-
-  # Combine parameters from environment variable. This is useful for global settings.
-  env_opts = (shlex.split(os.environ[S4CMD_ENV_KEY]) if S4CMD_ENV_KEY in os.environ else [])
-  (opt, args) = parser.parse_args(sys.argv[1:] + env_opts)
-  s4cmd_logging.configure(opt)
-
-  # Initalize keys for S3.
-  S3Handler.init_s3_keys(opt)
-  if S3Handler.S3_KEYS is None:
-    fail('[Invalid Argument] access key or secret key is not provided ', status = -1)
+def main():
   try:
-    CommandHandler(opt).run(args)
-  except InvalidArgument as e:
-    fail('[Invalid Argument] ', exc_info=e)
-  except Failure as e:
-    fail('[Runtime Failure] ', exc_info=e)
-  except BotoClient.BotoError as e:
-    fail('[Boto3Error] %s: %s' % (e.error_code, e.error_message))
-  except Exception as e:
-    fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
+      if not sys.argv[0]: sys.argv[0] = ''  # Workaround for running with optparse from egg
 
-  clean_tempfiles()
-  progress('') # Clear progress message before exit.
+      # Parser for command line options.
+      parser = optparse.OptionParser(
+        option_class=ExtendedOptParser,
+        description='Super S3 command line tool. Version %s' % S4CMD_VERSION)
 
-# Revision history:
-#
-#   - 1.0.1:  Fixed wrongly directory created by cp command with a single file.
-#             Fixed wrong directory discovery with a single child directory.
-#   - 1.0.2:  Fix the problem of get/put/sync directories.
-#             Fix the wildcard check for sync command.
-#             Temporarily avoid multipart upload for files smaller than 4.5G
-#             Stop showing progress if output is not connected to tty.
-#   - 1.5:    Allow wildcards with recursive mode.
-#             Support -d option for ls command.
-#   - 1.5.1:  Fix the bug that recursive S3 walk wrongly check the prefix.
-#             Add more tests.
-#             Fix md5 etag (with double quote) checking bug.
-#   - 1.5.2:  Read keys from environment variable or s3cfg.
-#             Implement mv command.
-#   - 1.5.3:  Implement du and _totalsize command.
-#   - 1.5.4:  Implement --ignore-empty-source parameter for backward compatibility.
-#   - 1.5.5:  Implement environment variable S4CMD_NUM_THREADS to change the default
-#             number of threads.
-#   - 1.5.6:  Fix s4cmd get/sync error with --ignore-empty-source for empty source
-#   - 1.5.7:  Fix multi-threading race condition with os.makedirs call
-#   - 1.5.8:  Fix the initialization of Options class.
-#   - 1.5.9:  Open source licensing.
-#   - 1.5.10: Fix options global variable bug
-#   - 1.5.11: Fix atomic write issue for small files calling boto API directly.
-#             Add code to cleanup temp files.
-#             Fix a bug where pretty_print calls message() without format.
-#   - 1.5.12: Add RetryFailure class to unknown network failures.
-#   - 1.5.13: Also retry S3ResponseError exceptions.
-#   - 1.5.14: Copy file privileges. If s4cmd sync is used, then it only update
-#             privileges of files when their signatures are different
-#   - 1.5.15: Close http connection cleanly after thread pool execution.
-#   - 1.5.16: Disable consecutive slashes removal.
-#   - 1.5.17: Check file size consistency after download; will retry the download if inconsistent.
-#   - 1.5.18: Use validate=self.opt.validate to prevent extraneous list API calls.
-#   - 1.5.19: Set socket.setdefaulttimeout() to prevent boto/s3 socket read block in httplib.
-#   - 1.5.20: Merge change from oniltonmaciel@github for arguments for multi-part upload.
-#             Fix setup.py for module and command line tool
-#   - 1.5.21: Merge changes from linsomniac@github for better argument parsing
-#   - 1.5.22: Add compatibility for Python3
-#   - 1.5.23: Add bash command line completion
-#   - 2.0.0:  Fully migrated from old boto 2.x to new boto3 library.
-#             Support S3 pass through APIs.
-#             Support batch delete (with delete_objects API).
-#             Support S4CMD_OPTS environment variable.
-#             Support moving files larger than 5GB with multipart upload.
-#             Support timestamp filtering with --last-modified-before and --last-modified-after options.
-#             Faster upload with lazy evaluation of md5 hash.
-#             Listing large number of files with S3 pagination, with memory is the limit.
-#             New directory to directory dsync command to replace old sync command.
-#   - 2.0.1:  Merge change from @rameshrajagopal for S3 keys in command-line parameters.
+      parser.add_option(
+          '--version', help='print out version of s4cmd', dest='version',
+          action='store_true', default=False)
+      parser.add_option(
+          '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
+          type='string', default=None)
+      parser.add_option(
+          '--access-key', help = 'use access_key for connection to S3', dest = 'access_key',
+          type = 'string', default = None)
+      parser.add_option(
+          '--secret-key', help = 'use security key for connection to S3', dest = 'secret_key',
+          type = 'string', default = None)
+      parser.add_option(
+          '-f', '--force', help='force overwrite files when download or upload',
+          dest='force', action='store_true', default=False)
+      parser.add_option(
+          '-r', '--recursive', help='recursively checking subdirectories',
+          dest='recursive', action='store_true', default=False)
+      parser.add_option(
+          '-s', '--sync-check', help='check file md5 before download or upload',
+          dest='sync_check', action='store_true', default=False)
+      parser.add_option(
+          '-n', '--dry-run', help='trial run without actual download or upload',
+          dest='dry_run', action='store_true', default=False)
+      parser.add_option(
+          '-t', '--retry', help='number of retries before giving up',
+          dest='retry', type=int, default=3)
+      parser.add_option(
+          '--retry-delay', help='seconds to sleep between retries',
+          type=int, default=10)
+      parser.add_option(
+          '-c', '--num-threads', help='number of concurrent threads',
+          type=int, default=get_default_thread_count())
+      parser.add_option(
+          '-d', '--show-directory', help='show directory instead of its content',
+          dest='show_dir', action='store_true', default=False)
+      parser.add_option(
+          '--ignore-empty-source', help='ignore empty source from s3',
+          dest='ignore_empty_source', action='store_true', default=False)
+      parser.add_option(
+          '--endpoint-url', help='configure boto3 to use a different s3 endpoint',
+          dest='endpoint_url', type='string', default=None)
+      parser.add_option(
+          '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
+          action='store_true', default=False)
+      parser.add_option(
+          '--verbose', help='verbose output', dest='verbose',
+          action='store_true', default=False)
+      parser.add_option(
+          '--debug', help='debug output', dest='debug',
+          action='store_true', default=False)
+      parser.add_option(
+          '--validate', help='(obsolete) validate lookup operation', dest='validate',
+          action='store_true', default=False)
+      parser.add_option(
+          '-D', '--delete-removed',
+          help='delete remote files that do not exist in source after sync',
+          dest='delete_removed', action='store_true', default=False)
+      parser.add_option(
+          '--multipart-split-size',
+          help='size in bytes to split multipart transfers', type=int,
+          default=50 * 1024 * 1024)
+      parser.add_option(
+          '--max-singlepart-download-size',
+          help='files with size (in bytes) greater than this will be downloaded in '
+          'multipart transfers', type=int, default=50 * 1024 * 1024)
+      parser.add_option(
+          '--max-singlepart-upload-size',
+          help='files with size (in bytes) greater than this will be uploaded in '
+          'multipart transfers', type=int, default=4500 * 1024 * 1024)
+      parser.add_option(
+          '--max-singlepart-copy-size',
+          help='files with size (in bytes) greater than this will be copied in '
+          'multipart transfers', type=int, default=100 * 1024 * 1024)
+      parser.add_option(
+          '--batch-delete-size',
+          help='Number of files (<1000) to be combined in batch delete.',
+          type=int, default=1000)
+      parser.add_option(
+          '--last-modified-before',
+          help='Condition on files where their last modified dates are before given parameter.',
+          type='datetime', default=None)
+      parser.add_option(
+          '--last-modified-after',
+          help='Condition on files where their last modified dates are after given parameter.',
+          type='datetime', default=None)
+
+      # Extra S3 API arguments
+      BotoClient.add_options(parser)
+
+      # Combine parameters from environment variable. This is useful for global settings.
+      env_opts = (shlex.split(os.environ[S4CMD_ENV_KEY]) if S4CMD_ENV_KEY in os.environ else [])
+      (opt, args) = parser.parse_args(sys.argv[1:] + env_opts)
+      s4cmd_logging.configure(opt)
+
+      if opt.version:
+        message('s4cmd version %s' % S4CMD_VERSION)
+      else:
+        # Initalize keys for S3.
+        S3Handler.init_s3_keys(opt)
+        try:
+          CommandHandler(opt).run(args)
+        except InvalidArgument as e:
+          fail('[Invalid Argument] ', exc_info=e)
+        except Failure as e:
+          fail('[Runtime Failure] ', exc_info=e)
+        except BotoClient.NoCredentialsError as e:
+          fail('[Invalid Argument] ', exc_info=e)
+        except BotoClient.BotoError as e:
+          fail('[Boto3Error] %s: %s' % (e.error_code, e.error_message))
+        except Exception as e:
+          fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
+
+      clean_tempfiles()
+      progress('') # Clear progress message before exit.
+  except Exception:
+      if not opt.verbose:
+        sys.exit(1)
+
+if __name__ == '__main__':
+  main()
