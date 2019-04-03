@@ -655,7 +655,7 @@ class S3Handler(object):
       config = ConfigParser.ConfigParser()
       config.read(s3cfg_path)
       keys = config.get("default", "access_key"), config.get("default", "secret_key")
-      debug("read S3 keys from $HOME/.s3cfg file")
+      debug("read S3 keys from %s file", s3cfg_path)
       return keys
     except Exception as e:
       info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
