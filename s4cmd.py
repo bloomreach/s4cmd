@@ -994,8 +994,14 @@ class S3Handler(object):
       for src, dest in sync_list:
         pool.download(src, dest)
     elif not src_s3_url and dst_s3_url:
+      expats = []
+      if self.opt.exclude:
+        expats = self.opt.exclude
+      info("excluded patterns: %s", expats)
+
       for src, dest in sync_list:
-        pool.upload(src, dest)
+        if not any(fnmatch.fnmatch(src, expat) for expat in expats):
+          pool.upload(src, dest)
     elif src_s3_url and dst_s3_url:
       for src, dest in sync_list:
         pool.copy(src, dest)
@@ -1815,6 +1821,18 @@ class ExtendedOptParser(optparse.Option):
   TYPE_CHECKER['datetime'] = check_datetime
   TYPE_CHECKER['dict'] = check_dict
 
+  # enable multiple option values (e.g. --exclude '*.thumbnail.jpg' --exclude '*.layout.jpg')
+  ACTIONS = optparse.Option.ACTIONS + ("extend",)
+  STORE_ACTIONS = optparse.Option.STORE_ACTIONS + ("extend",)
+  TYPED_ACTIONS = optparse.Option.TYPED_ACTIONS + ("extend",)
+  ALWAYS_TYPED_ACTIONS = optparse.Option.ALWAYS_TYPED_ACTIONS + ("extend",)
+
+  def take_action(self, action, dest, opt, value, values, parser):
+    if action == "extend":
+      values.ensure_value(dest, []).append(value)
+    else:
+      optparse.Option.take_action(self, action, dest, opt, value, values, parser)
+
 def main():
   try:
       if not sys.argv[0]: sys.argv[0] = ''  # Workaround for running with optparse from egg
@@ -1910,6 +1928,9 @@ def main():
           '--last-modified-after',
           help='Condition on files where their last modified dates are after given parameter.',
           type='datetime', default=None)
+      parser.add_option(
+          '--exclude', help='Exclude all files from src dsync (file-)list matching the specified pattern',
+          dest='exclude', action="extend", type='string', default=None)
 
       # Extra S3 API arguments
       BotoClient.add_options(parser)
