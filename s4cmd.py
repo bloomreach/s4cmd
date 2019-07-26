@@ -429,7 +429,7 @@ class BotoClient(object):
       if key in kargs and type(kargs[key]) == dict:
         assert(type(getattr(self.opt, key)) == dict)
         # Merge two dictionaries.
-        for k, v in getattr(self.opt, key).iteritems():
+        for k, v in getattr(self.opt, key).items():
           kargs[key][k] = v
       else:
         # Overwrite values.
