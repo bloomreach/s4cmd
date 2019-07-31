@@ -745,7 +745,7 @@ class S3Handler(object):
     '''Walk through local directories from root basedir'''
     result = []
 
-    for root, dirs, files in os.walk(basedir):
+    for root, dirs, files in os.walk(basedir, followlinks=True):
       for f in files:
         result.append(os.path.join(root, f))
     return result
@@ -1322,9 +1322,13 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     if not mpi:
       fsize = os.path.getsize(source)
       md5cache = LocalMD5Cache(source)
+      filelink = os.path.islink(source) and os.path.isfile(source)
 
       # optional checks
-      if self.opt.dry_run:
+      if self.opt.no_filelinks and filelink:
+        message('%s => %s (symlink skipped)', source, target)
+        return
+      elif self.opt.dry_run:
         message('%s => %s', source, target)
         return
       elif self.opt.sync_check and self.sync_check(md5cache, obj):
@@ -1931,6 +1935,9 @@ def main():
       parser.add_option(
           '--exclude', help='Exclude all files from src dsync (file-)list matching the specified pattern',
           dest='exclude', action="extend", type='string', default=None)
+      parser.add_option(
+          '--no-filelinks', help='do not upload files, which are symbolic links',
+          dest='no_filelinks', action='store_true', default=False)
 
       # Extra S3 API arguments
       BotoClient.add_options(parser)
