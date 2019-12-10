@@ -1,6 +1,7 @@
 # s4cmd
 ### Super S3 command line tool
 [![Build Status](https://travis-ci.com/bloomreach/s4cmd.svg?branch=master)](https://travis-ci.com/bloomreach/s4cmd) [![Join the chat at https://gitter.im/bloomreach/     s4cmd](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/bloomreach/s4cmd?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Run on Repl.it](https://repl.it/badge/github/bloomreach/s4cmd)](https://repl.it/github/bloomreach/s4cmd)
 
 ----
 
