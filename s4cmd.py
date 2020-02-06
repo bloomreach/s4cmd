@@ -648,8 +648,10 @@ class S3Handler(object):
     try:
       if opt.s3cfg != None:
         s3cfg_path = "%s" % opt.s3cfg
-      else:
+      elif 'HOME' in os.environ:
         s3cfg_path = "%s/.s3cfg" % os.environ["HOME"]
+      else:
+        return None
       if not os.path.exists(s3cfg_path):
         return None
       config = ConfigParser.ConfigParser()
