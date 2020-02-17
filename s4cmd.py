@@ -988,7 +988,6 @@ class S3Handler(object):
       raise Failure('Sync command need to sync directory to directory.')
 
     sync_list = [(os.path.join(source, f), os.path.join(target, f)) for f in source_list]
-
     pool = ThreadPool(ThreadUtil, self.opt)
     if src_s3_url and not dst_s3_url:
       for src, dest in sync_list:
@@ -1133,7 +1132,6 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     if not os.path.exists(md5cache.filename):
       return False
     localmd5 = md5cache.get_md5()
-
     # check multiple md5 locations
     return ('ETag' in remoteKey and remoteKey['ETag'] == '"%s"' % localmd5) or \
            ('md5' in remoteKey and remoteKey['md5'] == localmd5) or \
@@ -1444,7 +1442,6 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   @log_calls
   def copy(self, source, target, mpi=None, pos=0, chunk=0, part=0, delete_source=False):
     '''Copy a single file from source to target using boto S3 library.'''
-
     if self.opt.dry_run:
       message('%s => %s' % (source, target))
       return
@@ -1452,13 +1449,43 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     source_url = S3URL(source)
     target_url = S3URL(target)
 
+    if self.opt.sync_check:
+        try:
+            etag = self.s3.head_object(Bucket=target_url.bucket, Key=target_url.path)['ETag']
+        except BotoClient.botocore.exceptions.ClientError as e:
+            # If a client error is thrown, then check that it was a 404 error.
+            # If it was a 404 error, then the bucket does not exist.
+            error_code = e.response['Error']['Code']
+            if error_code == '404':
+                etag = ''
+            else:
+                raise(e)
+    else:
+        etag = ""
+
     if not mpi:
       obj = self.lookup(source_url)
       fsize = int(obj['ContentLength'])
 
       if fsize < self.opt.max_singlepart_copy_size:
-        self.s3.copy_object(Bucket=target_url.bucket, Key=target_url.path,
-                            CopySource={'Bucket': source_url.bucket, 'Key': source_url.path})
+        try:
+            self.s3.copy_object(
+                Bucket=target_url.bucket,
+                Key=target_url.path,
+                CopySource={
+                    'Bucket': source_url.bucket,
+                    'Key': source_url.path
+                },
+                CopySourceIfNoneMatch=etag,
+            )
+        except BotoClient.botocore.exceptions.ClientError as e:
+            # If a client error is thrown, then check that it was a 412 precondition failed
+            # (happens when eTag matches i.e. won't overwrite target)
+            error_code = e.response['Error']['Code']
+            if error_code == 'PreconditionFailed':
+                pass
+            else:
+                raise(e)
 
         message('%s => %s' % (source, target))
         if delete_source:
@@ -1475,12 +1502,22 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         self.pool.copy(*args, delete_source=delete_source)
       return
 
-    response = self.s3.upload_part_copy(Bucket=target_url.bucket,
-                                        Key=target_url.path,
-                                        CopySource={'Bucket': source_url.bucket, 'Key': source_url.path},
-                                        CopySourceRange='bytes=%d-%d' % (pos, pos + chunk - 1),
-                                        UploadId=mpi.id,
-                                        PartNumber=part)
+      try:
+        response = self.s3.upload_part_copy(Bucket=target_url.bucket,
+                                            Key=target_url.path,
+                                            CopySource={'Bucket': source_url.bucket, 'Key': source_url.path},
+                                            CopySourceRange='bytes=%d-%d' % (pos, pos + chunk - 1),
+                                            UploadId=mpi.id,
+                                            CopySourceIfNoneMatch=etag,
+                                            PartNumber=part)
+      except BotoClient.botocore.exceptions.ClientError as e:
+        # If a client error is thrown, then check that it was a 412 precondition failed
+        # (happens when eTag matches i.e. won't overwrite target)
+        error_code = e.response['Error']['Code']
+        if error_code == 'PreconditionFailed':
+            pass
+        else:
+            raise(e)
 
     if mpi.complete({'ETag': response['CopyPartResult']['ETag'], 'PartNumber': part}):
       try:
