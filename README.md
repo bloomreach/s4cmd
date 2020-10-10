@@ -234,6 +234,9 @@ debug output
 ##### `--validate`
 (obsolete) validate lookup operation
 
+##### `--no-sign-request`
+Makes unsigned request.
+
 ##### `-D, --delete-removed`
 delete remote files that do not exist in source after sync
 

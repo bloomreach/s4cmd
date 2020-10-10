@@ -1884,7 +1884,7 @@ def main():
           action='store_true', default=False)
       parser.add_option(
           '--no-sign-request',
-          help='credentials will not be used while making connection if set.', dest='no_sign_request',
+          help='unsigned requests would be made if set.', dest='no_sign_request',
           action='store_true', default=False)
       parser.add_option(
           '-D', '--delete-removed',
