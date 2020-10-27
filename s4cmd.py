@@ -1158,7 +1158,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     fi = filter_path.split(PATH_SEP)
 
     # Here, if we are in recursive mode, we allow the pi to be longer than fi.
-    # Otherwise, length of pi should be equal or less than the lenght of fi.
+    # Otherwise, length of pi should be equal or less than the length of fi.
     min_len = min(len(pi), len(fi))
     matched = fnmatch.fnmatch(PATH_SEP.join(pi[0:min_len]), PATH_SEP.join(fi[0:min_len]))
     return matched and (self.opt.recursive or len(pi) <= len(fi))
