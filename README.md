@@ -21,7 +21,7 @@
 - Faster upload with lazy evaluation of md5 hash.
 - Listing large number of files with S3 pagination, with memory is the limit.
 - New directory to directory `dsync` command is better and standalone implementation to replace old `sync` command, which is implemented based on top of get/put/mv commands. `--delete-removed` work for all cases including local to s3, s3 to local, and s3 to s3. `sync` command preserves the old behavior in this version for compatibility.
-- [Support for S3 compatible storage services](https://github.com/bloomreach/s4cmd/issues/52) such as DreamHost and Cloudian using `--endpoint-url` (Community Supported Beta Feature). 
+- [Support for S3 compatible storage services](https://github.com/bloomreach/s4cmd/issues/52) such as DreamHost and Cloudian using `--endpoint-url` (Community Supported Beta Feature).
 - Tested on both python 2 and 3.
 - Special thanks to [onera.com](http://www.onera.com) for supporting s4cmd.
 
@@ -215,6 +215,8 @@ number of concurrent threads
 
 ##### `--endpoint-url`
 endpoint url used in boto3 client
+
+Note: it may be necessary to set the [`AWS_DEFAULT_REGION`](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#environment-variable-configuration) environment variable.
 
 ##### `-d, --show-directory`
 show directory instead of its content
