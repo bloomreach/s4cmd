@@ -747,7 +747,16 @@ class S3Handler(object):
 
     for root, dirs, files in os.walk(basedir):
       for f in files:
-        result.append(os.path.join(root, f))
+        fnpath = os.path.join(root, f)
+        if (self.opt.skip_files_older_than_seconds):
+          diff = time.time()-os.path.getmtime(fnpath)
+          if (diff > self.opt.skip_files_older_than_seconds):
+            info("processing file=%s mtime=%s diff=%d", f, os.path.getmtime(fnpath), diff);
+            result.append(fnpath)
+          else:
+            info("skipping file=%s mtime=%s diff=%d", f, os.path.getmtime(fnpath), diff);
+        else:
+            result.append(fnpath)
     return result
 
   @log_calls
@@ -1910,6 +1919,10 @@ def main():
           '--last-modified-after',
           help='Condition on files where their last modified dates are after given parameter.',
           type='datetime', default=None)
+      parser.add_option(
+          '--skip-files-older-than-seconds',
+          help='Condition on files where their last modified timestamps are greater than the given parameter (in seconds).',
+          type=int, default=0)
 
       # Extra S3 API arguments
       BotoClient.add_options(parser)
