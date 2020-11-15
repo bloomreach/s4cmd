@@ -1229,7 +1229,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     '''
     def __init__(self, id):
       '''Constructor.
-         An unique identify for a single donwload/upload file.
+         An unique identify for a single download/upload file.
            - Download: the temporary file name.
            - Upload: the id of multipart upload provided by S3.
       '''
@@ -1745,7 +1745,7 @@ class CommandHandler(object):
     message(str(total_size))
 
 class ExtendedOptParser(optparse.Option):
-  '''Specialized parser to handle new types such as datetim and dict'''
+  '''Specialized parser to handle new types such as datetime and dict'''
 
   REGEX_DATE = re.compile(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})')
   REGEX_TIME = re.compile(r'(\d{1,2})\:(\d{2})')
