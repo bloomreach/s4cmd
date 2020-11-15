@@ -1329,9 +1329,14 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       # optional checks
       if self.opt.dry_run:
         message('%s => %s', source, target)
+        if self.opt.remove_source_files:
+          message('successful upload %s, deleting %s', target, source)
         return
       elif self.opt.sync_check and self.sync_check(md5cache, obj):
         message('%s => %s (synced)', source, target)
+        if self.opt.remove_source_files:
+          info('really deleting %s', source)
+          os.unlink(source)
         return
       elif not self.opt.force and obj:
         raise Failure('File already exists: %s' % target)
@@ -1344,6 +1349,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
                            Metadata={'md5': md5cache.get_md5(),
                                      'privilege': self.get_file_privilege(source)})
         message('%s => %s', source, target)
+        if self.opt.remove_source_files:
+          info('really deleting %s', source)
+          os.unlink(source)
         return
 
       # Here we need to have our own md5 value because multipart upload calculates
@@ -1366,6 +1374,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       try:
         self.s3.complete_multipart_upload(Bucket=s3url.bucket, Key=s3url.path, UploadId=mpi.id, MultipartUpload={'Parts': mpi.sorted_parts()})
         message('%s => %s', source, target)
+        if self.opt.remove_source_files:
+          info('really deleting %s', source)
+          os.unlink(source)
       except Exception as e:
         message('Unable to complete upload: %s', str(e))
         self.s3.abort_multipart_upload(Bucket=s3url.bucket, Key=s3url.path, UploadId=mpi.id)
@@ -1404,9 +1415,14 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       # optional checks
       if self.opt.dry_run:
         message('%s => %s', source, target)
+        if self.opt.remove_source_files:
+          message('successful download %s, deleting %s', target, source)
         return
       elif self.opt.sync_check and self.sync_check(LocalMD5Cache(target), obj):
         message('%s => %s (synced)', source, target)
+        if self.opt.remove_source_files:
+          info('really deleting %s', source)
+          self.delete(source)
         return
       elif not self.opt.force and os.path.exists(target):
         raise Failure('File already exists: %s' % target)
@@ -1442,6 +1458,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         self._verify_file_size(obj, tempfile)
         tempfile_set(tempfile, target)
         message('%s => %s', source, target)
+        if self.opt.remove_source_files:
+          info('really deleting %s', source)
+          self.delete(source)
       except Exception as e:
         # Note that we don't retry in this case, because
         # We are going to remove the temp file, and if we
@@ -1456,6 +1475,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
     if self.opt.dry_run:
       message('%s => %s' % (source, target))
+      if self.opt.remove_source_files:
+        message('successful copy %s, deleting %s', target, source)
       return
 
     source_url = S3URL(source)
@@ -1470,6 +1491,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
                             CopySource={'Bucket': source_url.bucket, 'Key': source_url.path})
 
         message('%s => %s' % (source, target))
+        if self.opt.remove_source_files:
+          info('really deleting %s', source)
+          self.delete(source)
         if delete_source:
           self.delete(source)
 
@@ -1496,10 +1520,13 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         # Finalize copy operation.
         self.s3.complete_multipart_upload(Bucket=target_url.bucket, Key=target_url.path, UploadId=mpi.id, MultipartUpload={'Parts': mpi.sorted_parts()})
 
+        message('%s => %s' % (source, target))
+        if self.opt.remove_source_files:
+          info('really deleting %s', source)
+          self.delete(source)
         if delete_source:
           self.delete(source)
 
-        message('%s => %s' % (source, target))
       except Exception as e:
         message('Unable to complete upload: %s', str(e))
         self.s3.abort_multipart_upload(Bucket=source_url.bucket, Key=source_url.path, UploadId=mpi.id)
@@ -1891,6 +1918,10 @@ def main():
           '-D', '--delete-removed',
           help='delete remote files that do not exist in source after sync',
           dest='delete_removed', action='store_true', default=False)
+      parser.add_option(
+          '-S', '--remove-source-files',
+          help='Remove source files after they are successfully synced remotely', dest='remove_source_files',
+          action='store_true', default=False)
       parser.add_option(
           '--multipart-split-size',
           help='size in bytes to split multipart transfers', type=int,
