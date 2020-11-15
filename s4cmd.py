@@ -748,9 +748,9 @@ class S3Handler(object):
     for root, dirs, files in os.walk(basedir):
       for f in files:
         fnpath = os.path.join(root, f)
-        if (self.opt.skip_files_older_than_seconds):
+        if self.opt.skip_files_older_than_seconds:
           diff = time.time()-os.path.getmtime(fnpath)
-          if (diff > self.opt.skip_files_older_than_seconds):
+          if diff > self.opt.skip_files_older_than_seconds:
             info("processing file=%s mtime=%s diff=%d", f, os.path.getmtime(fnpath), diff);
             result.append(fnpath)
           else:
@@ -1228,6 +1228,11 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
     if (self.opt.last_modified_after is not None) and obj['last_modified'] <= self.opt.last_modified_after:
       return
+
+    if self.opt.skip_files_older_than_seconds:
+      diff = datetime.datetime.now(obj['last_modified'].tzinfo)-obj['last_modified']
+      if diff <= datetime.timedelta(seconds=self.opt.skip_files_older_than_seconds):
+        return
 
     result.append(obj)
 
