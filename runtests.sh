@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# Copyright 2012-2018 BloomReach, Inc.
+# Copyright 2012-2021 BloomReach, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,10 +23,12 @@
 # Python settings, can be python 2 or 3
 PYTHON=${PYTHON:-python}
 PYTHONPATH=${PYTHONPATH:-$(pwd)}
+PYTHON_VERSION=$(python --version 2>&1)
+PYTHON_VERSION_NUM=$(awk '{print $2}' <<< ${PYTHON_VERSION})
 BUILD_ID=${BUILD_ID:-0}
 LOCALDIR=./test-tmp
 REMOTEDIR=${REMOTEDIR:-"s3://bucket/path"}
-REMOTEDIR="${REMOTEDIR}/${BUILD_ID}/$(${PYTHON} --version 2>&1 | cut -d' ' -f 2)"
+REMOTEDIR="${REMOTEDIR}/${BUILD_ID}/${PYTHON_VERSION_NUM}"
 S4CMD="${PYTHON} $(pwd)/s4cmd.py"
 S4CMD_OPTS=${S4CMD_OPTS:-"--debug"}
 FILESIZE=1M
@@ -835,9 +837,10 @@ else
   TEST_CASES="$*"
 fi
 
+
 echo 'Initializing...'
 initialize > /dev/null 2>&1
-echo "Executing test cases with $(python --version)"
+echo "Executing test cases with $PYTHON_VERSION"
 pushd $LOCALDIR > /dev/null
 for case in $TEST_CASES
 do
