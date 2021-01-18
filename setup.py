@@ -26,7 +26,7 @@ from setuptools.command.install import install as _install
 
 __author__ = "Chou-han Yang"
 __copyright__ = "Copyright 2012-2018 BloomReach, Inc."
-__license__ = "http://www.apache.org/licenses/LICENSE-2.0"
+__license__ = "Apache License 2.0"
 __version__ = "2.1.0"
 __maintainer__ = "Navin Pai, Naveen Vardhi"
 __status__ = "Development"
@@ -44,6 +44,7 @@ setup(name='s4cmd',
       description='Super S3 command line tool',
       author=__author__,
       license=__license__,
+      license_files  = ["LICENSE"],
       long_description=long_description,
       long_description_content_type='text/markdown',
       url='https://github.com/bloomreach/s4cmd',
@@ -55,4 +56,9 @@ setup(name='s4cmd',
             's4cmd = s4cmd:main',
         ]},
       cmdclass={'install': install},
+      classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: OS Independent",
+      ],
     )
