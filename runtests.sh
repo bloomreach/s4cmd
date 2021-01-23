@@ -841,7 +841,7 @@ fi
 
 
 echo 'Initializing...'
-initialize > /dev/null 2>&1
+initialize #> /dev/null 2>&1
 echo "Executing test cases with $PYTHON_VERSION"
 pushd $LOCALDIR > /dev/null
 for case in $TEST_CASES
