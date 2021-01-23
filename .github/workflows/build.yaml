@@ -1,4 +1,4 @@
-name: Python package
+name: s4cmd
 
 on: [push]
 
@@ -23,6 +23,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install flake8 pytest pytz boto3
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: Test with pytest
+    - name: Test
       run: |
         BUILD_ID=$BUILD_NUMBER && ./runtests.sh
