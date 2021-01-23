@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 #
 # Copyright 2012-2021 BloomReach, Inc.
 #
