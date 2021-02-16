@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 #
 # Copyright 2012-2018 BloomReach, Inc.
@@ -58,6 +58,7 @@ socket.setdefaulttimeout(SOCKET_TIMEOUT)
 
 # Global list for temp files.
 TEMP_FILES = set()
+PROCESSED_FILES = set()
 
 # Environment variable names for S3 credentials.
 S3_ACCESS_KEY_NAME = "AWS_ACCESS_KEY_ID"
@@ -1028,6 +1029,12 @@ class S3Handler(object):
           except:
             pass
 
+    if len(PROCESSED_FILES) > 0:
+      fr = open('report.txt', 'w')
+      for f in PROCESSED_FILES:
+        fr.write(f+'\n')
+      fr.close()
+
   @log_calls
   def sync_files(self, source, target):
     '''Sync files to S3. Does implement deletions if syncing TO s3.
@@ -1231,6 +1238,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
     if self.opt.skip_files_older_than_seconds:
       diff = datetime.datetime.now(obj['last_modified'].tzinfo)-obj['last_modified']
+      info('DBG AG2 diff=%d %s %s', diff.seconds, datetime.datetime.now(obj['last_modified'].tzinfo), obj['last_modified'])
       if diff <= datetime.timedelta(seconds=self.opt.skip_files_older_than_seconds):
         return
 
@@ -1329,6 +1337,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     # Initialization: Set up multithreaded uploads.
     if not mpi:
       fsize = os.path.getsize(source)
+      info("DBG AG size=%d ts=%s", fsize, os.path.getmtime(source))
       md5cache = LocalMD5Cache(source)
 
       # optional checks
@@ -1354,6 +1363,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
                            Metadata={'md5': md5cache.get_md5(),
                                      'privilege': self.get_file_privilege(source)})
         message('%s => %s', source, target)
+        PROCESSED_FILES.add(self.get_basename(source))
+        info('DBG AG '+self.get_basename(source))
         if self.opt.remove_source_files:
           info('really deleting %s', source)
           os.unlink(source)
@@ -1382,6 +1393,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         if self.opt.remove_source_files:
           info('really deleting %s', source)
           os.unlink(source)
+        PROCESSED_FILES.add(self.get_basename(source))
+        info('DBG AG 2 '+self.get_basename(source))
       except Exception as e:
         message('Unable to complete upload: %s', str(e))
         self.s3.abort_multipart_upload(Bucket=s3url.bucket, Key=s3url.path, UploadId=mpi.id)
