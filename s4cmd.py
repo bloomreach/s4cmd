@@ -1885,11 +1885,11 @@ def main():
           '-p', '--config', help='path to s3cfg config file', dest='s3cfg',
           type='string', default=None)
       parser.add_option(
-          '--access-key', help = 'use access_key for connection to S3', dest = 'access_key',
-          type = 'string', default = None)
+          '--access-key', help = 'use access_key for connection to S3', dest='access_key',
+          type='string', default=None)
       parser.add_option(
-          '--secret-key', help = 'use security key for connection to S3', dest = 'secret_key',
-          type = 'string', default = None)
+          '--secret-key', help = 'use security key for connection to S3', dest='secret_key',
+          type='string', default=None)
       parser.add_option(
           '-f', '--force', help='force overwrite files when download or upload',
           dest='force', action='store_true', default=False)
