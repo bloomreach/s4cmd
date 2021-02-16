@@ -1029,11 +1029,12 @@ class S3Handler(object):
           except:
             pass
 
-    if len(PROCESSED_FILES) > 0:
-      fr = open('report.txt', 'w')
-      for f in PROCESSED_FILES:
-        fr.write(f+'\n')
-      fr.close()
+    if self.opt.write_files_manifest_report_upon_completion:
+      if len(PROCESSED_FILES) > 0:
+        fr = open(self.opt.write_files_manifest_report_upon_completion, 'w')
+        for f in PROCESSED_FILES:
+          fr.write(f+'\n')
+        fr.close()
 
   @log_calls
   def sync_files(self, source, target):
@@ -1363,8 +1364,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
                            Metadata={'md5': md5cache.get_md5(),
                                      'privilege': self.get_file_privilege(source)})
         message('%s => %s', source, target)
-        PROCESSED_FILES.add(self.get_basename(source))
-        info('DBG AG '+self.get_basename(source))
+        if self.opt.write_files_manifest_report_upon_completion:
+          PROCESSED_FILES.add(self.get_basename(source))
+          info('DBG AG '+self.get_basename(source))
         if self.opt.remove_source_files:
           info('really deleting %s', source)
           os.unlink(source)
@@ -1393,8 +1395,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         if self.opt.remove_source_files:
           info('really deleting %s', source)
           os.unlink(source)
-        PROCESSED_FILES.add(self.get_basename(source))
-        info('DBG AG 2 '+self.get_basename(source))
+        if self.opt.write_files_manifest_report_upon_completion:
+          PROCESSED_FILES.add(self.get_basename(source))
+          info('DBG AG 2 '+self.get_basename(source))
       except Exception as e:
         message('Unable to complete upload: %s', str(e))
         self.s3.abort_multipart_upload(Bucket=s3url.bucket, Key=s3url.path, UploadId=mpi.id)
@@ -1972,6 +1975,10 @@ def main():
           '--skip-files-older-than-seconds',
           help='Condition on files where their last modified timestamps are greater than the given parameter (in seconds).',
           type=int, default=0)
+      parser.add_option(
+          '--write-files-manifest-report-upon-completion',
+          help='Write a completed files manifest report upon completion',
+          type='string', default=None)
 
       # Extra S3 API arguments
       BotoClient.add_options(parser)
