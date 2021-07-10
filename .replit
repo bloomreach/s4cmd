@@ -1,0 +1,2 @@
+language = "bash"
+run = "python setup.py install ; pip install boto3 ; s4cmd -h"
