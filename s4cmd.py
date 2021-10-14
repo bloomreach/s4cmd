@@ -1457,8 +1457,13 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       fsize = int(obj['ContentLength'])
 
       if fsize < self.opt.max_singlepart_copy_size:
-        self.s3.copy_object(Bucket=target_url.bucket, Key=target_url.path,
+
+        self.s3.copy_object(Bucket=target_url.bucket,
+                            Key=target_url.path,
                             CopySource={'Bucket': source_url.bucket, 'Key': source_url.path})
+
+        if self.opt.copy_acl:
+          self.copy_acl(source, target)
 
         message('%s => %s' % (source, target))
         if delete_source:
@@ -1487,6 +1492,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         # Finalize copy operation.
         self.s3.complete_multipart_upload(Bucket=target_url.bucket, Key=target_url.path, UploadId=mpi.id, MultipartUpload={'Parts': mpi.sorted_parts()})
 
+        if self.opt.copy_acl:
+          self.copy_acl(source, target)
+
         if delete_source:
           self.delete(source)
 
@@ -1495,6 +1503,24 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         message('Unable to complete upload: %s', str(e))
         self.s3.abort_multipart_upload(Bucket=source_url.bucket, Key=source_url.path, UploadId=mpi.id)
         raise RetryFailure('Copy failed: Unable to complete copy %s.' % source)
+
+  @log_calls
+  def copy_acl(self, source, target):
+    source_url = S3URL(source)
+    target_url = S3URL(target)
+
+    try:
+      source_acl = self.s3.client.get_object_acl(Bucket=source_url.bucket, Key=source_url.path)
+      target_acl = {
+        "Owner": source_acl['Owner'],
+        "Grants": source_acl['Grants'],
+      }
+      self.s3.client.put_object_acl(Bucket=target_url.bucket,
+                                    Key=target_url.path,
+                                    AccessControlPolicy=target_acl)
+    except Exception as e:
+      message('Unable to copy ACL: %s', str(e))
+      return
 
   @log_calls
   def delete(self, source):
@@ -1882,6 +1908,10 @@ def main():
           '-D', '--delete-removed',
           help='delete remote files that do not exist in source after sync',
           dest='delete_removed', action='store_true', default=False)
+      parser.add_option(
+          '-A', '--copy-acl',
+          help='copy the acl from the source s3 object to the target s3 object',
+          dest='copy_acl', action='store_true', default=False)
       parser.add_option(
           '--multipart-split-size',
           help='size in bytes to split multipart transfers', type=int,

@@ -142,7 +142,8 @@ Synchronize the contents of two directories. The directory can either be local o
 *   -s/--sync-check: check md5 hash to avoid syncing the same content.
 *   -f/--force: override existing file instead of showing error message.
 *   -n/--dry-run: emulate the operation without real sync.
-*   --delete-removed: delete files not in source directory.
+*   -D/--delete-removed: delete files not in source directory.
+*   -A/--copy-acl: copy the objects acl from source to target (only applies when both source & target are s3 buckets).
 
 #### `s4cmd sync [source] [target]`
 
@@ -152,7 +153,8 @@ Synchronize the contents of two directories. The directory can either be local o
 *   -s/--sync-check: check md5 hash to avoid syncing the same content.
 *   -f/--force: override existing file instead of showing error message.
 *   -n/--dry-run: emulate the operation without real sync.
-*   --delete-removed: delete files not in source directory. Only works when syncing local directory to s3 directory.
+*   -D/--delete-removed: delete files not in source directory. Only works when syncing local directory to s3 directory.
+*   -A/--copy-acl: copy the objects acl from source to target (only applies when both source & target are s3 buckets).
 
 #### `s4cmd cp [source] [target]`
 
@@ -162,6 +164,7 @@ Copy a file or a directory from a S3 location to another.
 *   -s/--sync-check: check md5 hash to avoid copying the same content.
 *   -f/--force: override existing file instead of showing error message.
 *   -n/--dry-run: emulate the operation without real copy.
+*   -A/--copy-acl: copy the objects acl from source to target (only applies when both source & target are s3 buckets).
 
 #### `s4cmd mv [source] [target]`
 
@@ -171,6 +174,7 @@ Move a file or a directory from a S3 location to another.
 *   -s/--sync-check: check md5 hash to avoid moving the same content.
 *   -f/--force: override existing file instead of showing error message.
 *   -n/--dry-run: emulate the operation without real move.
+*   -A/--copy-acl: copy the objects acl from source to target (only applies when both source & target are s3 buckets).
 
 #### `s4cmd del [path]`
 
@@ -234,7 +238,7 @@ debug output
 ##### `--validate`
 (obsolete) validate lookup operation
 
-##### `-D, --delete-removed`
+##### `-D, -D/--delete-removed`
 delete remote files that do not exist in source after sync
 
 ##### `--multipart-split-size=[integer]`
