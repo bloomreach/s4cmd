@@ -48,7 +48,7 @@ else:
 ## Global constants
 ##
 
-S4CMD_VERSION = "2.1.0"
+S4CMD_VERSION = "2.1.0 BETA"
 
 PATH_SEP = '/'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S UTC'
@@ -502,6 +502,7 @@ class ThreadPool(object):
       self.pool = pool
       self.opt = pool.opt
       self.daemon = True
+      self.thread_id = -1
       self.start()
 
     def run(self):
@@ -515,22 +516,28 @@ class ThreadPool(object):
         if not item:
           break
 
+        self.thread_id = threading.get_native_id()
+
         try:
           func_name, retry, args, kargs = item
           self.__class__.__dict__[func_name](self, *args, **kargs)
         except InvalidArgument as e:
           self.pool.tasks.terminate(e)
-          fail('[Invalid Argument] ', exc_info=e)
+          message('[T%s] args: %s, kargs: %s', self.thread_id, args, kargs)
+          fail('[T%s] [Invalid Argument] ' % (self.thread_id), exc_info=e)
         except Failure as e:
           self.pool.tasks.terminate(e)
-          fail('[Runtime Failure] ', exc_info=e)
+          message('[T%s] args: %s, kargs: %s', self.thread_id, args, kargs)
+          fail('[T%s] [Runtime Failure] ' % (self.thread_id), exc_info=e)
         except OSError as e:
           self.pool.tasks.terminate(e)
-          fail('[OSError] %d: %s' % (e.errno, e.strerror))
+          message('[T%s] args: %s, kargs: %s', self.thread_id, args, kargs)
+          fail('[T%s] [OSError] %d: %s' % (self.thread_id, e.errno, e.strerror))
         except BotoClient.S3RetryableErrors as e:
           if retry >= self.opt.retry:
             self.pool.tasks.terminate(e)
-            fail('[Runtime Exception] ', exc_info=e, stacktrace=True)
+            message('[T%s] args: %s, kargs: %s', self.thread_id, args, kargs)
+            fail('[T%s] [Runtime Exception] ' % (self.thread_id), exc_info=e, stacktrace=True)
           else:
             # Show content of exceptions.
             error(e)
@@ -539,7 +546,8 @@ class ThreadPool(object):
           self.pool.tasks.put((func_name, retry + 1, args, kargs))
         except Exception as e:
           self.pool.tasks.terminate(e)
-          fail('[Exception] ', exc_info=e)
+          message('[T%s] args: %s, kargs: %s', self.thread_id, args, kargs)
+          fail('[T%s] [Exception] ' % (self.thread_id), exc_info=e)
         finally:
           self.pool.processed()
           self.pool.tasks.task_done()
@@ -1200,7 +1208,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         if self.opt.recursive or obj_name.count(PATH_SEP) == filter_path_level:
           self.conditional(result, {
             'name': S3URL.combine(s3url.proto, s3url.bucket, obj_name),
-            'is_dir': False,
+            'is_dir': (obj['Size'] == 0 and obj_name.endswith(PATH_SEP)),
             'size': obj['Size'],
             'last_modified': obj['LastModified']
           })
@@ -1446,7 +1454,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
     '''Copy a single file from source to target using boto S3 library.'''
 
     if self.opt.dry_run:
-      message('%s => %s' % (source, target))
+      message('[T%s] %s => %s' % (self.thread_id, source, target))
       return
 
     source_url = S3URL(source)
@@ -1465,15 +1473,15 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         if self.opt.copy_acl:
           self.copy_acl(source, target)
 
-        message('%s => %s' % (source, target))
+        message('[T%s] %s => %s' % (self.thread_id, source, target))
         if delete_source:
           self.delete(source)
 
         return
 
       response = self.s3.create_multipart_upload(Bucket=target_url.bucket,
-                                                 Key=target_url.path,
-                                                 Metadata=obj['Metadata'])
+                                                Key=target_url.path,
+                                                Metadata=obj['Metadata'])
       upload_id = response['UploadId']
 
       for args in self.get_file_splits(upload_id, source, target, fsize, self.opt.multipart_split_size):
@@ -1498,11 +1506,11 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         if delete_source:
           self.delete(source)
 
-        message('%s => %s' % (source, target))
+        message('[T%s] %s => %s' % (self.thread_id, source, target))
       except Exception as e:
-        message('Unable to complete upload: %s', str(e))
+        message('[T%s] Unable to complete upload: %s', self.thread_id, str(e))
         self.s3.abort_multipart_upload(Bucket=source_url.bucket, Key=source_url.path, UploadId=mpi.id)
-        raise RetryFailure('Copy failed: Unable to complete copy %s.' % source)
+        raise RetryFailure('[T%s] Copy failed: Unable to complete copy %s.' % (self.thread_id, source))
 
   @log_calls
   def copy_acl(self, source, target):
@@ -1519,7 +1527,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
                                     Key=target_url.path,
                                     AccessControlPolicy=target_acl)
     except Exception as e:
-      message('Unable to copy ACL: %s', str(e))
+      message('[T%s] Unable to copy ACL: %s', self.thread_id, str(e))
       return
 
   @log_calls
