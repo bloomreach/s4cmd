@@ -516,7 +516,11 @@ class ThreadPool(object):
         if not item:
           break
 
-        self.thread_id = threading.get_native_id()
+        if callable(getattr(threading, 'get_native_id')):
+          # get_native_id only avaiable in python 3.8+
+          self.thread_id = threading.get_native_id()
+        else:
+          self.thread_id = threading.get_ident()
 
         try:
           func_name, retry, args, kargs = item
