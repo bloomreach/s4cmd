@@ -794,6 +794,7 @@ class S3Handler(object):
       return True
     return False
 
+
   @log_calls
   def put_single_file(self, pool, source, target):
     '''Upload a single file or a directory by adding a task into queue'''
