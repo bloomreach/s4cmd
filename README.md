@@ -318,6 +318,9 @@ Specifies the customer-provided encryption key for Amazon S3 to use to decrypt t
 ##### `--API-ETag=[string]`
 Entity tag returned when the part was uploaded.
 
+##### `--API-ExcludeExtension=[string]`
+Includes all objects except objects with a specified extension.
+
 ##### `--API-Expires=[datetime]`
 The date and time at which the object is no longer cacheable.
 
@@ -344,6 +347,9 @@ Return the object only if its entity tag (ETag) is different from the one specif
 
 ##### `--API-IfUnmodifiedSince=[datetime]`
 Return the object only if it has not been modified since the specified time, otherwise return a 412 (precondition failed).
+
+##### `--API-IncludeExtension=[string]`
+Includes objects with a specified extension.
 
 ##### `--API-Metadata=[dict]`
 A map (in json string) of metadata to store with the object in S3
