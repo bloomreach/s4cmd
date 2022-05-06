@@ -123,6 +123,7 @@ Upload local files up to S3.
 *   -s/--sync-check: check md5 hash to avoid uploading the same content.
 *   -f/--force: override existing file instead of showing error message.
 *   -n/--dry-run: emulate the operation without real upload.
+*   --no-filelinks: do not upload files, if they are symbolic links
 
 #### `s4cmd get [source] [target]`
 
@@ -143,6 +144,8 @@ Synchronize the contents of two directories. The directory can either be local o
 *   -f/--force: override existing file instead of showing error message.
 *   -n/--dry-run: emulate the operation without real sync.
 *   --delete-removed: delete files not in source directory.
+*   --exclude: exclude files with the given pattern(s). Only works for local files to be uploaded to s3 directory. This option can be provided several times.
+*   --no-filelinks: do not upload (local) files to S3, if they are symbolic links
 
 #### `s4cmd sync [source] [target]`
 
@@ -153,6 +156,7 @@ Synchronize the contents of two directories. The directory can either be local o
 *   -f/--force: override existing file instead of showing error message.
 *   -n/--dry-run: emulate the operation without real sync.
 *   --delete-removed: delete files not in source directory. Only works when syncing local directory to s3 directory.
+*   --no-filelinks: do not upload (local) files, if they are symbolic links
 
 #### `s4cmd cp [source] [target]`
 
@@ -262,6 +266,9 @@ before given parameter.
 ##### `--last-modified-after=[datetime]`
 Condition on files where their last modified dates are
 after given parameter.
+
+##### `--exclude`
+(local) Filenames, matching the given pattern (https://docs.python.org/3.4/library/fnmatch.html) will not be synced to s3 directory. You may provide this param several times.
 
 
 ## S3 API Pass-through Options
