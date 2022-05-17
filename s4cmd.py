@@ -377,14 +377,8 @@ class BotoClient(object):
        for each method we are going to call.
     '''
     self.opt = opt
-    if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
-      self.client = self.boto3.client('s3',
-                                      aws_access_key_id=aws_access_key_id,
-                                      aws_secret_access_key=aws_secret_access_key,
-                                      endpoint_url=opt.endpoint_url)
-    else:
-      self.client = self.boto3.client('s3', endpoint_url=opt.endpoint_url)
-
+    client_params = self._get_client_params(aws_access_key_id, aws_secret_access_key)
+    self.client = self.boto3.client('s3', **client_params)
     # Cache the result so we don't have to recalculate.
     self.legal_params = {}
     for method in BotoClient.ALLOWED_CLIENT_METHODS:
@@ -406,6 +400,16 @@ class BotoClient(object):
       return wrapped_method
 
     return super(BotoClient, self).__getattribute__(method)
+
+  def _get_client_params(self, aws_access_key_id=None, aws_secret_access_key=None):
+    client_params = {'endpoint_url': self.opt.endpoint_url}
+    if self.opt.no_sign_request:
+      client_params['config'] = self.botocore.config.Config(signature_version=self.botocore.UNSIGNED)
+    if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
+      client_params['aws_access_key_id'] = aws_access_key_id
+      client_params['aws_secret_access_key'] = aws_secret_access_key
+
+    return client_params
 
   def get_legal_params(self, method):
     '''Given a API name, list all legal parameters using boto3 service model.'''
@@ -1877,6 +1881,10 @@ def main():
           action='store_true', default=False)
       parser.add_option(
           '--validate', help='(obsolete) validate lookup operation', dest='validate',
+          action='store_true', default=False)
+      parser.add_option(
+          '--no-sign-request',
+          help='unsigned requests would be made if set.', dest='no_sign_request',
           action='store_true', default=False)
       parser.add_option(
           '-D', '--delete-removed',
