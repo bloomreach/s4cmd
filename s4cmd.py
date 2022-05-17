@@ -1574,7 +1574,7 @@ class CommandHandler(object):
     }
     fmts = format.split('|')
     if len(fmts) != len(args):
-      raise InvalidArgument('Invalid number of parameters')
+      raise InvalidArgument('Invalid number of parameters, expected %d arguments instead found %d' % (len(fmts), len(args)))
 
     for i, fmt in enumerate(fmts):
       valid = False
