@@ -328,6 +328,8 @@ class BotoClient(object):
        "Specifies the customer-provided encryption key for Amazon S3 to use to decrypt the source object. The encryption key provided in this header must be one that was used when the source object was created."),
       ("ETag", "string",
        "Entity tag returned when the part was uploaded."),
+      ("ExcludeExtension", "string",
+       "Includes all objects except objects with a specified extension."),
       ("Expires", "datetime",
        "The date and time at which the object is no longer cacheable."),
       ("GrantFullControl", "string",
@@ -346,6 +348,8 @@ class BotoClient(object):
        "Return the object only if its entity tag (ETag) is different from the one specified, otherwise return a 304 (not modified)."),
       ("IfUnmodifiedSince", "datetime",
        "Return the object only if it has not been modified since the specified time, otherwise return a 412 (precondition failed)."),
+      ("IncludeExtension", "string",
+       "Includes objects with a specified extension."),
       ("Metadata", "dict",
        "A map (in json string) of metadata to store with the object in S3"),
       ("MetadataDirective", "string",
@@ -783,6 +787,9 @@ class S3Handler(object):
 
     return result
 
+
+
+
   @log_calls
   def put_single_file(self, pool, source, target):
     '''Upload a single file or a directory by adding a task into queue'''
@@ -1079,6 +1086,7 @@ class LocalMD5Cache(object):
       self.md5 = self.file_hash(self.filename)
     return self.md5
 
+
 class ThreadUtil(S3Handler, ThreadPool.Worker):
   '''Thread workers for S3 operations.
      This class contains all thread workers for S3 operations.
@@ -1222,6 +1230,14 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
 
     result.append(obj)
 
+  def extension_check(self, file):
+    ''' check files extension which is included or excluded  '''
+    if self.opt.ExcludeExtension is not None and file.endswith(self.opt.ExcludeExtension):
+      return True
+    if self.opt.IncludeExtension is not None and not file.endswith(self.opt.IncludeExtension):
+      return True
+    return False
+
   class MultipartItem:
     '''Utility class for multiple part upload/download.
        This class is used to keep track of a single upload/download file, so
@@ -1309,6 +1325,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   @log_calls
   def upload(self, source, target, mpi=None, pos=0, chunk=0, part=0):
     '''Thread worker for upload operation.'''
+    if self.extension_check(source):
+      return
     s3url = S3URL(target)
     obj = self.lookup(s3url)
 
@@ -1385,6 +1403,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   @log_calls
   def download(self, source, target, mpi=None, pos=0, chunk=0, part=0):
     '''Thread worker for download operation.'''
+    if self.extension_check(source):
+      return
     s3url = S3URL(source)
     obj = self.lookup(s3url)
     if obj is None:
@@ -1444,7 +1464,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   @log_calls
   def copy(self, source, target, mpi=None, pos=0, chunk=0, part=0, delete_source=False):
     '''Copy a single file from source to target using boto S3 library.'''
-
+    if self.extension_check(source):
+      return
     if self.opt.dry_run:
       message('%s => %s' % (source, target))
       return
@@ -1499,6 +1520,9 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
   @log_calls
   def delete(self, source):
     '''Thread worker for download operation.'''
+    if self.extension_check(source):
+      return
+
     s3url = S3URL(source)
 
     message('Delete %s', source)
@@ -1521,6 +1545,8 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
       bucket = S3URL(sources[0]).bucket
       deletes = []
       for source in sources:
+        if self.extension_check(source):
+          continue
         s3url = S3URL(source)
         if s3url.bucket != bucket:
           raise Failure('Unable to delete keys in different bucket %s and %s.' % (s3url.bucket, bucket))
