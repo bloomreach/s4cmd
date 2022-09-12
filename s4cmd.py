@@ -60,8 +60,6 @@ socket.setdefaulttimeout(SOCKET_TIMEOUT)
 TEMP_FILES = set()
 
 # Environment variable names for S3 credentials.
-S3_ACCESS_KEY_NAME = "AWS_ACCESS_KEY_ID"
-S3_SECRET_KEY_NAME = "AWS_SECRET_ACCESS_KEY"
 S4CMD_ENV_KEY = "S4CMD_OPTS"
 
 
@@ -377,13 +375,15 @@ class BotoClient(object):
        for each method we are going to call.
     '''
     self.opt = opt
+
+    session = self.boto3.session.Session()
     if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
-      self.client = self.boto3.client('s3',
+      self.client = session.resource('s3',
                                       aws_access_key_id=aws_access_key_id,
                                       aws_secret_access_key=aws_secret_access_key,
                                       endpoint_url=opt.endpoint_url)
     else:
-      self.client = self.boto3.client('s3', endpoint_url=opt.endpoint_url)
+      self.client = session.resource('s3', endpoint_url=opt.endpoint_url)
 
     # Cache the result so we don't have to recalculate.
     self.legal_params = {}
@@ -622,17 +622,6 @@ class S3Handler(object):
   S3_KEYS = None
 
   @staticmethod
-  def s3_keys_from_env():
-    '''Retrieve S3 access keys from the environment, or None if not present.'''
-    env = os.environ
-    if S3_ACCESS_KEY_NAME in env and S3_SECRET_KEY_NAME in env:
-      keys = (env[S3_ACCESS_KEY_NAME], env[S3_SECRET_KEY_NAME])
-      debug("read S3 keys from environment")
-      return keys
-    else:
-      return None
-
-  @staticmethod
   def s3_keys_from_cmdline(opt):
     '''Retrieve S3 access keys from the command line, or None if not present.'''
     if opt.access_key != None and opt.secret_key != None:
@@ -664,8 +653,7 @@ class S3Handler(object):
   @staticmethod
   def init_s3_keys(opt):
     '''Initialize s3 access keys from environment variable or s3cfg config file.'''
-    S3Handler.S3_KEYS = S3Handler.s3_keys_from_cmdline(opt) or S3Handler.s3_keys_from_env() \
-                        or S3Handler.s3_keys_from_s3cfg(opt)
+    S3Handler.S3_KEYS = S3Handler.s3_keys_from_cmdline(opt) or S3Handler.s3_keys_from_s3cfg(opt)
 
   def __init__(self, opt):
     '''Constructor, connect to S3 store'''
