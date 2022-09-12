@@ -378,12 +378,12 @@ class BotoClient(object):
 
     session = self.boto3.session.Session()
     if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
-      self.client = session.resource('s3',
+      self.client = session.client('s3',
                                       aws_access_key_id=aws_access_key_id,
                                       aws_secret_access_key=aws_secret_access_key,
                                       endpoint_url=opt.endpoint_url)
     else:
-      self.client = session.resource('s3', endpoint_url=opt.endpoint_url)
+      self.client = session.client('s3', endpoint_url=opt.endpoint_url)
 
     # Cache the result so we don't have to recalculate.
     self.legal_params = {}
