@@ -271,9 +271,13 @@ class BotoClient(object):
   S3RetryableErrors = (
     socket.timeout,
     socket.error if IS_PYTHON2 else ConnectionError,
-    botocore.vendored.requests.packages.urllib3.exceptions.ReadTimeoutError,
     botocore.exceptions.IncompleteReadError
   )
+  try:
+      # Newer boto removed botocore.vendored entirely.
+      S3RetryableErrors += (botocore.vendored.requests.packages.urllib3.exceptions.ReadTimeoutError,)
+  except AttributeError:
+      pass
 
   # List of API functions we use in s4cmd.
   ALLOWED_CLIENT_METHODS = [
