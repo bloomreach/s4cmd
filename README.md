@@ -93,7 +93,9 @@ Limitations:
 You can install `s4cmd` [PyPI](https://pypi.python.org/pypi/s4cmd).
 
 ```
-pip install s4cmd
+git clone https://github.com/MISSEY/s4cmd.git
+cd s4cmd
+pip install .
 ```
 
 - Copy or create a symbolic link so you can run `s4cmd.py` as `s4cmd`. (It is just
