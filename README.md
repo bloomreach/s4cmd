@@ -191,6 +191,7 @@ Available parameters:
 
 ## s4cmd Control Options
 
+
 ##### `-p S3CFG, --config=[filename]`
 path to s3cfg config file
 
@@ -226,6 +227,9 @@ ignore empty source from s3
 
 ##### `--use-ssl`
 (obsolete) use SSL connection to S3
+
+##### `--ignore-certificate`
+use ignore certificate to ignore the ssl verification
 
 ##### `--verbose`
 verbose output
