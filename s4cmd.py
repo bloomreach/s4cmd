@@ -379,11 +379,12 @@ class BotoClient(object):
     self.opt = opt
     if (aws_access_key_id is not None) and (aws_secret_access_key is not None):
       self.client = self.boto3.client('s3',
+                                      verify=opt.verify_certificate,
                                       aws_access_key_id=aws_access_key_id,
                                       aws_secret_access_key=aws_secret_access_key,
                                       endpoint_url=opt.endpoint_url)
     else:
-      self.client = self.boto3.client('s3', endpoint_url=opt.endpoint_url)
+      self.client = self.boto3.client('s3',  verify=opt.verify_certificate, endpoint_url=opt.endpoint_url)
 
     # Cache the result so we don't have to recalculate.
     self.legal_params = {}
@@ -1869,6 +1870,9 @@ def main():
       parser.add_option(
           '--use-ssl', help='(obsolete) use SSL connection to S3', dest='use_ssl',
           action='store_true', default=False)
+      parser.add_option(
+          '--ignore-certificate', help='accept invalid certificate', dest='verify_certificate',
+          action='store_false', default=True)
       parser.add_option(
           '--verbose', help='verbose output', dest='verbose',
           action='store_true', default=False)
