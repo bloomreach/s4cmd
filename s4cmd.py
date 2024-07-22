@@ -372,7 +372,7 @@ class BotoClient(object):
        "If the bucket is configured as a website, redirects requests for this object to another object in the same bucket or to an external URL. Amazon S3 stores the value of this header in the object metadata."),
   ]
 
-  def __init__(self, opt, aws_access_key_id=None, aws_secret_access_key=None):
+  def __init__(self, opt, aws_access_key_id=None, aws_secret_access_key=None, endpoint_url=None):
     '''Initialize boto3 API bridge class. Calculate and cache all legal parameters
        for each method we are going to call.
     '''
@@ -382,7 +382,7 @@ class BotoClient(object):
                                       verify=opt.verify_certificate,
                                       aws_access_key_id=aws_access_key_id,
                                       aws_secret_access_key=aws_secret_access_key,
-                                      endpoint_url=opt.endpoint_url)
+                                      endpoint_url=endpoint_url if endpoint_url is not None else opt.endpoint_url)
     else:
       self.client = self.boto3.client('s3',  verify=opt.verify_certificate, endpoint_url=opt.endpoint_url)
 
@@ -621,7 +621,8 @@ class S3Handler(object):
   '''
 
   S3_KEYS = None
-
+  S3_ENDPOINT = None
+  
   @staticmethod
   def s3_keys_from_env():
     '''Retrieve S3 access keys from the environment, or None if not present.'''
@@ -629,7 +630,7 @@ class S3Handler(object):
     if S3_ACCESS_KEY_NAME in env and S3_SECRET_KEY_NAME in env:
       keys = (env[S3_ACCESS_KEY_NAME], env[S3_SECRET_KEY_NAME])
       debug("read S3 keys from environment")
-      return keys
+      return keys,None
     else:
       return None
 
@@ -639,7 +640,7 @@ class S3Handler(object):
     if opt.access_key != None and opt.secret_key != None:
       keys = (opt.access_key, opt.secret_key)
       debug("read S3 keys from commandline")
-      return keys
+      return keys,opt.endpoint_url
     else:
       return None
 
@@ -656,8 +657,9 @@ class S3Handler(object):
       config = ConfigParser.ConfigParser()
       config.read(s3cfg_path)
       keys = config.get("default", "access_key"), config.get("default", "secret_key")
+      endpoint_url = config.get("default", "host_base")
       debug("read S3 keys from %s file", s3cfg_path)
-      return keys
+      return keys,endpoint_url
     except Exception as e:
       info("could not read S3 keys from %s file; skipping (%s)", s3cfg_path, e)
       return None
@@ -665,7 +667,7 @@ class S3Handler(object):
   @staticmethod
   def init_s3_keys(opt):
     '''Initialize s3 access keys from environment variable or s3cfg config file.'''
-    S3Handler.S3_KEYS = S3Handler.s3_keys_from_cmdline(opt) or S3Handler.s3_keys_from_env() \
+    S3Handler.S3_KEYS,S3Handler.S3_ENDPOINT = S3Handler.s3_keys_from_cmdline(opt) or S3Handler.s3_keys_from_env() \
                         or S3Handler.s3_keys_from_s3cfg(opt)
 
   def __init__(self, opt):
@@ -682,7 +684,7 @@ class S3Handler(object):
     '''Connect to S3 storage'''
     try:
       if S3Handler.S3_KEYS:
-        self.s3 = BotoClient(self.opt, S3Handler.S3_KEYS[0], S3Handler.S3_KEYS[1])
+        self.s3 = BotoClient(self.opt, S3Handler.S3_KEYS[0], S3Handler.S3_KEYS[1], S3Handler.S3_ENDPOINT)
       else:
         self.s3 = BotoClient(self.opt)
     except Exception as e:
