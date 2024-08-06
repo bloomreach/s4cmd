@@ -1735,7 +1735,22 @@ class CommandHandler(object):
   def du_handler(self, args):
     '''Handler for size command'''
     for src, size in self.s3handler().size(args[1:]):
-      message('%s\t%s' % (size, src))
+      if self.opt.humanread:
+        if size > 2*1099511627776: # 2^40
+          size_in_units = float(size) / 1099511627776
+          units = 'Tb'
+        elif size > 2*1073741824: # 2^30
+          size_in_units = float(size) / 1073741824
+          units = 'Gb'
+        elif size > 2*1048576: # 2^20
+          size_in_units = float(size) / 1048576
+          units = 'Mb'
+        elif size > 2048:
+          size_in_units = float(size) / 1024
+          units = 'Kb'
+        message('%0.2f %s\t%s' % (size_in_units, units, src))
+      else:
+        message('%s\t%s' % (size, src))
 
   @log_calls
   def _totalsize_handler(self, args):
@@ -1843,6 +1858,9 @@ def main():
       parser.add_option(
           '-r', '--recursive', help='recursively checking subdirectories',
           dest='recursive', action='store_true', default=False)
+      parser.add_option(
+          '-H', '--human-readable', help='print sizes in human readable format (eg, 234M, 2.3G)',
+          dest='humanread', action='store_true', default=False)
       parser.add_option(
           '-s', '--sync-check', help='check file md5 before download or upload',
           dest='sync_check', action='store_true', default=False)

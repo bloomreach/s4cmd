@@ -186,6 +186,7 @@ Get the size of the given directory.
 Available parameters:
 
 *   -r/--recursive: also add sizes of sub-directories recursively.
+*   -H/--human-readable: print sizes in human readable format (eg, 234M, 2.3G).
 
 ## s4cmd Control Options
 
