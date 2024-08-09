@@ -1440,7 +1440,7 @@ class ThreadUtil(S3Handler, ThreadPool.Worker):
         # retry here with original parameters (wrapped in
         # the task item), it would fail anyway
         tempfile_set(tempfile, None)
-        raise Failure('Download Failure: %s, Source: %s.' % (e.message, source))
+        raise Failure('Download Failure: %s, Source: %s.' % (str(e), source))
 
   @log_calls
   def copy(self, source, target, mpi=None, pos=0, chunk=0, part=0, delete_source=False):
