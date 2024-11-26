@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 #
 # Copyright 2012-2021 BloomReach, Inc.
 #
@@ -839,7 +841,7 @@ fi
 
 
 echo 'Initializing...'
-initialize > /dev/null 2>&1
+initialize #> /dev/null 2>&1
 echo "Executing test cases with $PYTHON_VERSION"
 pushd $LOCALDIR > /dev/null
 for case in $TEST_CASES
