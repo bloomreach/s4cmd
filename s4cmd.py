@@ -896,16 +896,16 @@ class S3Handler(object):
     '''
     message("Deleting files found in %s and not in %s", source, target)
     if os.path.isdir(source):
-      unecessary = []
+      unnecessary = []
       basepath = S3URL(target).path
       for f in [f for f in self.s3walk(target) if not f['is_dir']]:
         local_name = os.path.join(source, os.path.relpath(S3URL(f['name']).path, basepath))
         if not os.path.isfile(local_name):
           message("%s not found locally, adding to delete queue", local_name)
-          unecessary.append(f['name'])
-      if len(unecessary) > 0:
+          unnecessary.append(f['name'])
+      if len(unnecessary) > 0:
         pool = ThreadPool(ThreadUtil, self.opt)
-        for del_file in unecessary:
+        for del_file in unnecessary:
           pool.delete(del_file)
         pool.join()
     else:
